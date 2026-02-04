@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // Voor debugPrint
 import 'services/database_helper.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // =============================================================================
 // MODEL CLASSES
@@ -70,16 +70,21 @@ class DataProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _entries = [];
   Map<String, dynamic> _user = {};
   ThemeMode _themeMode = ThemeMode.system;
+  
+  // EASTER EGG STATUS
+  bool _secretUnlocked = false;
 
   List<Car> get cars => _cars;
   Map<String, dynamic> get user => _user;
   ThemeMode get themeMode => _themeMode;
+  bool get secretUnlocked => _secretUnlocked;
 
   Future<void> loadData() async {
     _cars = await DatabaseHelper.instance.getCars();
     _entries = await DatabaseHelper.instance.getEntries();
     _user = await DatabaseHelper.instance.getUserSettings();
     
+    // Thema laden
     String? t = _user['theme_mode'];
     if (t == 'light') {
       _themeMode = ThemeMode.light;
@@ -89,6 +94,26 @@ class DataProvider extends ChangeNotifier {
       _themeMode = ThemeMode.system;
     }
 
+    // Secret laden
+    final prefs = await SharedPreferences.getInstance();
+    _secretUnlocked = prefs.getBool('secret_unlocked') ?? false;
+
+    notifyListeners();
+  }
+
+  // --- EASTER EGG ACTIONS ---
+  Future<void> unlockSecret() async {
+    _secretUnlocked = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('secret_unlocked', true);
+    notifyListeners();
+  }
+
+  // NIEUW: Secret weer verbergen
+  Future<void> lockSecret() async {
+    _secretUnlocked = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('secret_unlocked', false);
     notifyListeners();
   }
 
@@ -157,7 +182,7 @@ class DataProvider extends ChangeNotifier {
       double endOdo = (list.last['odometer'] as num).toDouble();
       totalDist = endOdo - startOdo;
       
-      // We tellen alle liters op behalve de allereerste tankbeurt (startpunt meting)
+      // We tellen alle liters op behalve de allereerste tankbeurt
       totalLiters = list.skip(1).map((e) => (e['liters'] as num).toDouble()).reduce((a, b) => a + b);
     }
 

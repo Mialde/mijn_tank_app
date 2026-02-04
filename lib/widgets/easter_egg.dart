@@ -7,6 +7,7 @@ class ZoomCarEasterEgg extends StatefulWidget {
 }
 class _ZoomCarEasterEggState extends State<ZoomCarEasterEgg> with SingleTickerProviderStateMixin {
   late AnimationController _ctrl; late Animation<double> _scale; late Animation<double> _opacity;
+  
   @override void initState() {
     super.initState();
     int duration = widget.isTimeMachine ? 6 : 4;
@@ -16,9 +17,29 @@ class _ZoomCarEasterEggState extends State<ZoomCarEasterEgg> with SingleTickerPr
     _ctrl.forward().then((_) => widget.onFinished());
   }
   @override void dispose() { _ctrl.dispose(); super.dispose(); }
+  
   @override Widget build(BuildContext context) {
     return Center(child: AnimatedBuilder(animation: _ctrl, builder: (context, child) {
-              return Opacity(opacity: _opacity.value, child: Transform.scale(scale: _scale.value, child: widget.isTimeMachine ? Icon(Icons.rocket_launch, size: 80, color: Colors.blueGrey[300]) : Stack(alignment: Alignment.center, children: [const Icon(Icons.directions_car, size: 100, color: Colors.blue), Positioned(bottom: 22, child: Container(padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0.5), decoration: BoxDecoration(color: Colors.yellow, border: Border.all(color: Colors.black, width: 0.5), borderRadius: BorderRadius.circular(1)), child: const Text("53ND NUD35", style: TextStyle(color: Colors.black, fontSize: 5, fontWeight: FontWeight.bold, letterSpacing: 0.5))))])));
+              return Opacity(
+                opacity: _opacity.value, 
+                child: Transform.scale(
+                  scale: _scale.value, 
+                  child: widget.isTimeMachine 
+                  ? Icon(Icons.rocket_launch, size: 80, color: Colors.blueGrey[300]) 
+                  : Stack(alignment: Alignment.center, children: [
+                      // AANGEPAST: Icoon en Kleur
+                      const Icon(Icons.directions_car_filled_rounded, size: 100, color: Color(0xFF212121)), // Metallic Zwart (Antraciet)
+                      Positioned(
+                        bottom: 22, 
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0.5), 
+                          decoration: BoxDecoration(color: Colors.yellow, border: Border.all(color: Colors.black, width: 0.5), borderRadius: BorderRadius.circular(1)), 
+                          child: const Text("53ND NUD35", style: TextStyle(color: Colors.black, fontSize: 5, fontWeight: FontWeight.bold, letterSpacing: 0.5))
+                        )
+                      )
+                    ])
+                )
+              );
     }));
   }
 }

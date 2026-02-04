@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; // <--- NIEUWE IMPORT
 import 'data_provider.dart';
-import 'screens/home_screen.dart'; // We verwijzen nu naar het aparte bestand
+import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,6 +40,14 @@ class TankBuddyApp extends StatelessWidget {
       themeMode: data.themeMode,
       theme: lightTheme,
       darkTheme: darkTheme,
+      // --- LOCALIZATION SETUP ---
+      supportedLocales: const [Locale('nl')], // We ondersteunen Nederlands
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      // --------------------------
       home: const HomeScreen(),
     );
   }

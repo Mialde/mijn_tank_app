@@ -290,8 +290,8 @@ class _ConsumptionDetailPageState extends State<ConsumptionDetailPage> {
         
         double val = data[i]['val'];
         Color barColor = Colors.blueAccent;
-        if (val == bestRun) barColor = Colors.green;
-        else if (val == worstRun) barColor = Colors.orange;
+        if (val == bestRun) { barColor = Colors.green; }
+        else if (val == worstRun) { barColor = Colors.orange;}
 
         groups.add(BarChartGroupData(
           x: i, 

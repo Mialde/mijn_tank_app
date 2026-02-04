@@ -3,6 +3,9 @@ import 'input_screen.dart';
 import 'dashboard_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/easter_egg.dart';
+import '../widgets/bug_easter_egg.dart';
+import 'package:provider/provider.dart';
+import '../data_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,7 +16,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final PageController _pageController = PageController();
   int _curr = 0;
-  bool _showEgg = false;
+  
+  // AANGEPAST: String status voor welk type ei actief is
+  String? _activeEgg; // 'bug', 'rocket' of null
   bool _isTimeMachine = false;
 
   @override
@@ -24,26 +29,47 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final data = context.read<DataProvider>();
+
     return Scaffold(
       body: Stack(children: [
         PageView(
           controller: _pageController,
           onPageChanged: (i) => setState(() => _curr = i),
           children: [
-            const TankbeurtScreen(), // Deze komt in input_screen.dart
-            const StatsScreen(),     // Deze komt in dashboard_screen.dart
-            SettingsScreen(          // Deze komt in settings_screen.dart
-              onEasterEgg: (isTimeMachine) => setState(() { 
-                _isTimeMachine = isTimeMachine; 
-                _showEgg = true; 
-              })
+            const TankbeurtScreen(), 
+            const StatsScreen(),     
+            SettingsScreen(          
+              onBugEgg: () => setState(() => _activeEgg = 'bug'),
+              onRocketEgg: (isTimeMachine) => setState(() {
+                _isTimeMachine = isTimeMachine;
+                _activeEgg = 'rocket';
+              }),
             )
           ],
         ),
-        if (_showEgg) 
+        
+        // DE RAKET / DELOREAN (Oud)
+        if (_activeEgg == 'rocket') 
           ZoomCarEasterEgg(
             isTimeMachine: _isTimeMachine, 
-            onFinished: () => setState(() => _showEgg = false)
+            onFinished: () => setState(() => _activeEgg = null)
+          ),
+
+        // DE BUG (Nieuw)
+        if (_activeEgg == 'bug')
+          BugOverlay(
+            onFinished: () => setState(() => _activeEgg = null),
+            onSecretUnlocked: () {
+              data.unlockSecret();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("🎉 GEHEIME OPTIE ONTGRENDELD! 🎉\nKijk in instellingen bij Systeem."),
+                  backgroundColor: Colors.amber,
+                  duration: Duration(seconds: 4),
+                )
+              );
+            },
           ),
       ]),
       bottomNavigationBar: NavigationBar(

@@ -69,10 +69,21 @@ class _TankbeurtScreenState extends State<TankbeurtScreen> {
                   const SizedBox(height: 16),
                   TextField(controller: _p, keyboardType: TextInputType.number, decoration: _deco("Prijs (€)", Icons.euro)),
                   const SizedBox(height: 16),
-                  TextField(readOnly: true, controller: TextEditingController(text: DateFormat('dd-MM-yyyy').format(_date)), decoration: _deco("Datum", Icons.calendar_today), onTap: () async {
-                        final res = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2020), lastDate: DateTime.now());
-                        if (res != null) { setState(() => _date = res); }
-                      }),
+                 TextField(
+  readOnly: true, 
+  controller: TextEditingController(text: DateFormat('dd-MM-yyyy').format(_date)), 
+  decoration: _deco("Datum", Icons.calendar_today), 
+  onTap: () async {
+      final res = await showDatePicker(
+        context: context, 
+        initialDate: _date, 
+        firstDate: DateTime(2020), 
+        lastDate: DateTime.now(),
+        locale: const Locale('nl'), // <--- DEZE REGEL TOEVOEGEN
+      );
+      if (res != null) { setState(() => _date = res); }
+  }
+),
                 ],
               ),
             ),
