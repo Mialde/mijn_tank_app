@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:fl_chart/fl_chart.dart'; 
 import 'data_provider.dart';
 import 'services/database_helper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart'; 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onPageChanged: (i) => setState(() => _curr = i),
           children: [
             const TankbeurtScreen(),
-            const StatsScreen(),
+            const StatsScreen(), 
             SettingsScreen(onEasterEgg: (isTimeMachine) => setState(() { _isTimeMachine = isTimeMachine; _showEgg = true; }))
           ],
         ),
@@ -202,6 +204,133 @@ class StatsScreen extends StatefulWidget {
 class _StatsScreenState extends State<StatsScreen> {
   int? _selCarId;
   final _statsCarDisplayCtrl = TextEditingController();
+  
+  final List<String> _allPossibleTiles = ['cons', 'apk', 'price', 'dist', 'liters', 'hist'];
+  
+  List<String> _activeTileKeys = ['cons', 'apk', 'price', 'dist', 'liters', 'hist'];
+  List<String> _hiddenTileKeys = [];
+
+  bool _showApkDate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTileConfig();
+  }
+
+  Future<void> _loadTileConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedOrder = prefs.getStringList('tile_order');
+    final savedHidden = prefs.getStringList('hidden_tiles');
+
+    if (savedOrder != null && savedOrder.isNotEmpty) {
+      final validSaved = savedOrder.where((k) => _allPossibleTiles.contains(k)).toList();
+      final missing = _allPossibleTiles.where((k) => !validSaved.contains(k));
+      setState(() {
+        _activeTileKeys = [...validSaved, ...missing];
+      });
+    }
+    if (savedHidden != null) {
+      setState(() {
+        _hiddenTileKeys = savedHidden;
+      });
+    }
+  }
+
+  Future<void> _saveTileConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('tile_order', _activeTileKeys);
+    await prefs.setStringList('hidden_tiles', _hiddenTileKeys);
+  }
+
+  String _getTileTitle(String key) {
+    switch (key) {
+      case 'cons': return "Verbruik Meter";
+      case 'apk': return "APK Status";
+      case 'price': return "Literprijs";
+      case 'dist': return "Laatste Rit";
+      case 'liters': return "Getankt";
+      case 'hist': return "Geschiedenis";
+      default: return key;
+    }
+  }
+
+  void _showEditSheet() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.6,
+              maxChildSize: 0.9,
+              builder: (_, scrollController) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Dashboard Tegels", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Klaar")),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ReorderableListView(
+                        padding: const EdgeInsets.all(16),
+                        onReorder: (oldIndex, newIndex) {
+                          setSheetState(() {
+                            if (oldIndex < newIndex) {
+                              newIndex -= 1;
+                            }
+                            final String item = _activeTileKeys.removeAt(oldIndex);
+                            _activeTileKeys.insert(newIndex, item);
+                          });
+                          setState(() {}); 
+                          _saveTileConfig();
+                        },
+                        children: _activeTileKeys.map((key) {
+                          final isHidden = _hiddenTileKeys.contains(key);
+                          return ListTile(
+                            key: ValueKey(key),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            leading: Icon(Icons.drag_handle, color: Colors.grey[400]),
+                            title: Text(_getTileTitle(key), style: TextStyle(fontWeight: FontWeight.bold, color: isHidden ? Colors.grey : null)),
+                            trailing: Switch(
+                              value: !isHidden,
+                              activeTrackColor: Colors.blueAccent,
+                              onChanged: (val) {
+                                setSheetState(() {
+                                  if (val) {
+                                    _hiddenTileKeys.remove(key);
+                                  } else {
+                                    _hiddenTileKeys.add(key);
+                                  }
+                                });
+                                setState(() {});
+                                _saveTileConfig();
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      }
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,26 +339,29 @@ class _StatsScreenState extends State<StatsScreen> {
     if (_selCarId == null && data.cars.isNotEmpty) { 
       _selCarId = data.cars.first.id; 
     }
-    
+    Car? selectedCar;
     if (_selCarId != null && data.cars.isNotEmpty) {
-      final car = data.cars.firstWhere((c) => c.id == _selCarId, orElse: () => data.cars.first);
-      _statsCarDisplayCtrl.text = car.name;
+      selectedCar = data.cars.firstWhere((c) => c.id == _selCarId, orElse: () => data.cars.first);
+      _statsCarDisplayCtrl.text = selectedCar.name;
     }
 
     final stats = data.getStats(_selCarId);
-    final double avg = stats['avgCons'];
-    final double last = stats['lastCons'];
+    final entries = data.getEntriesForCar(_selCarId);
+    double lastLiters = 0;
+    String lastDate = "---";
+    if (entries.isNotEmpty) {
+      entries.sort((a, b) => b['date'].compareTo(a['date']));
+      lastLiters = (entries.first['liters'] as num).toDouble();
+      DateTime dt = DateTime.parse(entries.first['date']);
+      lastDate = "${dt.day}-${dt.month}-${dt.year}";
+    }
+    stats['lastLiters'] = lastLiters; 
 
-    double gEnd = (avg / 5).ceil() * 5.0;
-    if (gEnd < 5) gEnd = 5; 
-    double maxScale = gEnd;
-    double gStart = gEnd - 5.0;
-    double oStart = gStart - 5.0;
-    if (oStart < 0) oStart = 0;
+    final visibleTiles = _activeTileKeys.where((k) => !_hiddenTileKeys.contains(k)).toList();
 
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         children: [
           const SizedBox(height: 20),
           const Text("Voertuig", style: TextStyle(fontSize: 18, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
@@ -275,24 +407,161 @@ class _StatsScreenState extends State<StatsScreen> {
           
           const SizedBox(height: 24),
           
-          GridView.count(
+          GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 1.0, 
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.0, 
+            ),
+            itemCount: visibleTiles.length,
+            itemBuilder: (context, index) {
+              final key = visibleTiles[index];
+              return _buildTileContent(key, stats, selectedCar, lastDate);
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTileContent(String key, Map<String, dynamic> stats, Car? car, String lastDate) {
+    final double avg = stats['avgCons'];
+    final double last = stats['lastCons'];
+    
+    // Gauge berekening
+    double gEnd = (avg / 5).ceil() * 5.0;
+    if (gEnd < 5) gEnd = 5; 
+    double maxScale = gEnd;
+    double gStart = gEnd - 5.0;
+    double oStart = gStart - 5.0;
+    if (oStart < 0) oStart = 0;
+
+    Widget content;
+    switch (key) {
+      case 'cons':
+        content = _consumptionTile(avg, last, maxScale, oStart, gStart);
+        break;
+      case 'apk':
+        content = _apkTile(car);
+        break;
+      case 'price':
+        content = _simpleGridTile("Literprijs", "€${stats['lastPrice'].toStringAsFixed(3)}", Icons.euro_symbol_rounded, Colors.green);
+        break;
+      case 'dist':
+        content = _simpleGridTile("Laatste Rit", "${stats['lastDist'].toStringAsFixed(0)} KM", Icons.map_rounded, Colors.purpleAccent);
+        break;
+      case 'liters':
+        // Aangepaste Liters tegel
+        return InkWell(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LitersDetailPage(carId: _selCarId))),
+          onLongPress: _showEditSheet,
+          child: _litersTile(stats['lastLiters'], lastDate),
+        );
+      case 'hist':
+        content = _historyGridTile(Icons.history_rounded, Colors.blueAccent);
+        break;
+      default:
+        content = const SizedBox();
+    }
+
+    if (key == 'liters') return content;
+
+    return GestureDetector(
+      onLongPress: _showEditSheet,
+      child: content,
+    );
+  }
+
+  Widget _simpleGridTile(String t, String v, IconData i, Color c) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor, 
+        borderRadius: BorderRadius.circular(24), 
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)]
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(i, color: c, size: 32),
+          const SizedBox(height: 12),
+          Text(t, style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600), textAlign: TextAlign.center),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(v, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold))
+          ),
+        ],
+      )
+    );
+  }
+
+  // NIEUWE SPECIFIEKE TEGEL VOOR LITERS
+  Widget _litersTile(double liters, String date) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+      ),
+      child: Column(
+        children: [
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _consumptionTile(avg, last, maxScale, oStart, gStart),
-              _statCard("Literprijs", "€${stats['lastPrice'].toStringAsFixed(3)}", Icons.euro_symbol_rounded, Colors.green),
+              Text("Getankt", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              Icon(Icons.water_drop_rounded, color: Colors.teal, size: 20),
             ],
           ),
-          
-          const SizedBox(height: 16),
-          _statCard("Laatste Rit", "${stats['lastDist'].toStringAsFixed(0)} KM", Icons.map_rounded, Colors.purpleAccent, fullWidth: true),
-          const SizedBox(height: 16),
-          _statCard("Geschiedenis", "Bekijken", Icons.history_rounded, Colors.blueAccent, fullWidth: true, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoryPage(carId: _selCarId)))),
+          Expanded(
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  "${liters.toStringAsFixed(1)} L",
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Text(
+              date,
+              style: TextStyle(fontSize: 8.5, color: Colors.grey[600], fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _historyGridTile(IconData i, Color c) {
+    return InkWell(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoryPage(carId: _selCarId))),
+      onLongPress: _showEditSheet, 
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor, 
+          borderRadius: BorderRadius.circular(24), 
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)]
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(i, color: c, size: 32),
+            const SizedBox(height: 12),
+            Text("Geschiedenis", style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            const Text("Bekijken", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+          ],
+        )
       ),
     );
   }
@@ -300,6 +569,7 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget _consumptionTile(double avg, double last, double max, double oStart, double gStart) {
     return InkWell(
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ConsumptionDetailPage(carId: _selCarId))),
+      onLongPress: _showEditSheet,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -372,21 +642,134 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  Widget _statCard(String t, String v, IconData i, Color c, {bool fullWidth = false, VoidCallback? onTap}) => InkWell(
-          onTap: onTap,
-          child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10)]),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  String _getMonthAbbr(int m) {
+    const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+    if (m < 1 || m > 12) return "";
+    return months[m - 1];
+  }
+
+  Widget _apkTile(Car? car) {
+    String mainCenterText = "---";
+    String upperLeftText = "nog";
+    String lowerRightText = "dagen";
+    String footerText = "N.v.t.";
+    Color ringColor = Colors.green;
+    double progress = 0.0;
+    final themeTextColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black;
+    double centerSize = _showApkDate ? 22.0 : 32.0;
+    double labelSize = _showApkDate ? 11.0 : 14.0;
+    final labelStyle = TextStyle(fontSize: labelSize, fontWeight: FontWeight.bold, color: themeTextColor, height: 1.0);
+
+    if (car?.apkDate != null) {
+      final apk = DateTime.parse(car!.apkDate!);
+      final now = DateTime.now();
+      final fullDateStr = DateFormat('dd-MM-yyyy').format(apk);
+      final diff = apk.difference(now).inDays + 1; 
+      if (diff < 30) { ringColor = Colors.red; } else if (diff < 60) { ringColor = Colors.orange; } else { ringColor = Colors.green; }
+      progress = (diff / 365).clamp(0.0, 1.0);
+
+      if (_showApkDate) {
+        upperLeftText = "tot";
+        mainCenterText = "${apk.day} ${_getMonthAbbr(apk.month)}";
+        lowerRightText = "geldig";
+        String suffix = "dagen";
+        if (diff == 1) suffix = "dag";
+        footerText = "$diff $suffix";
+      } else {
+        upperLeftText = "nog";
+        mainCenterText = diff.toString();
+        String suffix = "dagen";
+        if (diff == 1) suffix = "dag";
+        lowerRightText = suffix;
+        footerText = fullDateStr;
+      }
+    }
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _showApkDate = !_showApkDate;
+        });
+      },
+      onLongPress: _showEditSheet,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+        ),
+        child: Column(
+          children: [
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("APK", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                Icon(Icons.fact_check_outlined, color: Colors.blueAccent, size: 20),
+              ],
+            ),
+            Expanded(
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Text(t, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
-                        Text(v, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))
-                  ]),
-                  Icon(i, color: c, size: 28),
+                  Padding(
+                    padding: const EdgeInsets.all(3.0),
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: CustomPaint(
+                        painter: ApkRingPainter(
+                          progress: progress,
+                          color: ringColor,
+                          backgroundColor: Theme.of(context).brightness == Brightness.dark 
+                              ? Colors.white10 
+                              : Colors.grey[200]!,
+                        ),
+                      ),
+                    ),
+                  ),
+                  IntrinsicWidth(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(upperLeftText, style: labelStyle),
+                        ),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            mainCenterText,
+                            style: TextStyle(
+                              fontSize: centerSize,
+                              fontWeight: FontWeight.w900,
+                              color: ringColor,
+                              height: 1.0
+                            ),
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(lowerRightText, style: labelStyle),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
-              )));
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Text(
+                footerText, 
+                style: TextStyle(fontSize: 8.5, color: Colors.grey[600], fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   InputDecoration _deco(String label, IconData icon, {Widget? suffix}) => InputDecoration(
     labelText: label.isEmpty ? null : label, 
@@ -402,7 +785,272 @@ class _StatsScreenState extends State<StatsScreen> {
 }
 
 // =============================================================================
-// 5. CONSUMPTION DETAIL PAGINA
+// 5. NIEUWE PAGINA: LITERS DETAIL (MET SCROLLBARE GRAFIEK & LIJST)
+// =============================================================================
+
+class LitersDetailPage extends StatelessWidget {
+  final int? carId;
+  const LitersDetailPage({super.key, this.carId});
+
+  @override
+  Widget build(BuildContext context) {
+    final data = context.watch<DataProvider>();
+    final entries = data.getEntriesForCar(carId);
+    entries.sort((a, b) => a['date'].compareTo(b['date'])); 
+
+    // 1. Data voorbereiden: Groepeer per maand (Year-Month key)
+    Map<String, List<Map<String, dynamic>>> grouped = {};
+    for (var e in entries) {
+      DateTime dt = DateTime.parse(e['date']);
+      String key = "${dt.year}-${dt.month.toString().padLeft(2, '0')}";
+      if (!grouped.containsKey(key)) grouped[key] = [];
+      grouped[key]!.add(e);
+    }
+    
+    // Sorteer sleutels voor de grafiek (Oud -> Nieuw)
+    final sortedKeys = grouped.keys.toList()..sort();
+    
+    // Sorteer sleutels voor de lijst (Nieuw -> Oud)
+    final reversedKeys = sortedKeys.reversed.toList();
+
+    double totalLiters = 0;
+    if (entries.isNotEmpty) {
+      totalLiters = entries.map((e) => (e['liters'] as num).toDouble()).reduce((a, b) => a + b);
+    }
+    double avgLiters = entries.isNotEmpty ? totalLiters / entries.length : 0;
+
+    // Kleurenpalet
+    final List<Color> stackColors = [
+      Colors.teal, Colors.blueAccent, Colors.orange, Colors.purpleAccent, 
+      Colors.redAccent, Colors.green, Colors.amber, Colors.indigo, Colors.pink
+    ];
+
+    // 2. Grafiek data bouwen
+    List<BarChartGroupData> bars = [];
+    double maxTotal = 0;
+
+    for (int i = 0; i < sortedKeys.length; i++) {
+      String key = sortedKeys[i];
+      List<Map<String, dynamic>> monthEntries = grouped[key]!;
+      
+      double currentY = 0;
+      List<BarChartRodStackItem> stacks = [];
+      
+      for (int j = 0; j < monthEntries.length; j++) {
+        double val = (monthEntries[j]['liters'] as num).toDouble();
+        Color color = stackColors[j % stackColors.length];
+        
+        stacks.add(BarChartRodStackItem(currentY, currentY + val, color));
+        currentY += val;
+      }
+
+      if (currentY > maxTotal) maxTotal = currentY;
+
+      bars.add(BarChartGroupData(
+        x: i,
+        barRods: [
+          BarChartRodData(
+            toY: currentY,
+            width: 24, // Iets smaller voor elegante 6-op-een-rij
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+            rodStackItems: stacks,
+          )
+        ],
+        showingTooltipIndicators: [], // GEEN waardes boven de staaf
+      ));
+    }
+
+    double maxY = ((maxTotal / 10).ceil() * 10.0) + 10;
+    if (maxY == maxTotal + 10) { maxY = maxTotal; } 
+
+    return Scaffold(
+      appBar: AppBar(title: const Text("Getankte Liters")),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // BEREKENING VOOR PRECIES 6 STAVEN OP HET SCHERM
+              // We willen dat 6 staven precies de breedte van het scherm vullen.
+              // Als er minder data is, blijven de staven links en is rechts leeg.
+              // Als er meer data is, wordt de chart breder en kun je scrollen.
+              
+              double screenWidth = constraints.maxWidth;
+              double widthPerBarSlot = screenWidth / 6; 
+              
+              // Totale breedte van de chart container
+              double finalChartWidth = max(screenWidth, sortedKeys.length * widthPerBarSlot);
+
+              // Padding tussen groepen berekenen (Slot breedte - Bar breedte)
+              double spacing = widthPerBarSlot - 24; // 24 is de bar width
+
+              return Container(
+                height: 220, // LAGER zoals gevraagd
+                padding: const EdgeInsets.fromLTRB(0, 20, 0, 10), // Padding links weggehaald, chart regelt dit
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 15)],
+                ),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Container(
+                    width: finalChartWidth,
+                    padding: const EdgeInsets.only(left: 10, right: 10), // Algemene padding voor scrollview
+                    child: BarChart(
+                      BarChartData(
+                        maxY: maxY,
+                        alignment: BarChartAlignment.start, // Links uitlijnen!
+                        groupsSpace: spacing, // Dynamische ruimte zodat het precies past
+                        barGroups: bars,
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          horizontalInterval: 10,
+                          getDrawingHorizontalLine: (val) => FlLine(color: Colors.grey.withValues(alpha: 0.2), strokeWidth: 1),
+                        ),
+                        titlesData: FlTitlesData(
+                          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 40, // Ruimte voor Y-as labels en afstand tot 1e staaf
+                              interval: 10,
+                              getTitlesWidget: (val, meta) => Text(val.toInt().toString(), style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                            )
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 30,
+                              getTitlesWidget: (val, meta) {
+                                int idx = val.toInt();
+                                if (idx >= 0 && idx < sortedKeys.length) {
+                                  List<String> parts = sortedKeys[idx].split('-');
+                                  int m = int.parse(parts[1]);
+                                  const mNames = ["", "Jan", "Feb", "Mrt", "Apr", "Mei", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"];
+                                  return Padding(padding: const EdgeInsets.only(top: 8), child: Text(mNames[m], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)));
+                                }
+                                return const SizedBox();
+                              },
+                            )
+                          ),
+                        ),
+                        borderData: FlBorderData(
+                          show: true,
+                          border: const Border(
+                            bottom: BorderSide(color: Colors.grey, width: 1),
+                            left: BorderSide(color: Colors.grey, width: 1),
+                            top: BorderSide.none,
+                            right: BorderSide.none,
+                          )
+                        ),
+                        barTouchData: BarTouchData(enabled: false), // Geen interactie op de grafiek zelf
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(child: _statCard(context, "Totaal Getankt", "${totalLiters.toStringAsFixed(0)} L", Icons.water_drop, Colors.teal)),
+              const SizedBox(width: 16),
+              Expanded(child: _statCard(context, "Gemiddeld p/beurt", "${avgLiters.toStringAsFixed(2)} L", Icons.functions, Colors.blueGrey)),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // LIJST MET MAANDKAARTEN
+          ...reversedKeys.map((key) {
+             List<Map<String, dynamic>> monthEntries = grouped[key]!;
+             double monthTotal = monthEntries.map((e) => (e['liters'] as num).toDouble()).reduce((a, b) => a + b);
+             
+             List<String> parts = key.split('-');
+             int m = int.parse(parts[1]);
+             int y = int.parse(parts[0]);
+             const mNames = ["", "Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli", "Augustus", "September", "Oktober", "November", "December"];
+             String monthName = "${mNames[m]} $y";
+
+             return Container(
+               margin: const EdgeInsets.only(bottom: 16),
+               padding: const EdgeInsets.all(16),
+               decoration: BoxDecoration(
+                 color: Theme.of(context).cardColor,
+                 borderRadius: BorderRadius.circular(16),
+                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8)],
+               ),
+               child: Column(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 children: [
+                   Row(
+                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                     children: [
+                       Text(monthName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                       Text("${monthTotal.toStringAsFixed(1).replaceAll('.', ',')} L", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+                     ],
+                   ),
+                   const Divider(),
+                   ...monthEntries.asMap().entries.map((entry) {
+                      int idx = entry.key;
+                      var e = entry.value;
+                      double l = (e['liters'] as num).toDouble();
+                      DateTime d = DateTime.parse(e['date']);
+                      Color dotColor = stackColors[idx % stackColors.length];
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 10, height: 10,
+                              decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+                            ),
+                            const SizedBox(width: 12),
+                            Text("${l.toStringAsFixed(1).replaceAll('.', ',')} L", style: const TextStyle(fontWeight: FontWeight.w600)),
+                            const SizedBox(width: 8),
+                            Text("op ${d.day} ${mNames[d.month].toLowerCase()}", style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                          ],
+                        ),
+                      );
+                   }),
+                 ],
+               ),
+             );
+          }),
+          
+          const SizedBox(height: 30),
+        ],
+      ),
+    );
+  }
+
+  Widget _statCard(BuildContext context, String title, String val, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 15)],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 30),
+          const SizedBox(height: 10),
+          Text(title, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          const SizedBox(height: 5),
+          Text(val, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// 6. CONSUMPTION DETAIL PAGINA
 // =============================================================================
 
 class ConsumptionDetailPage extends StatefulWidget {
@@ -877,7 +1525,7 @@ class _ConsumptionDetailPageState extends State<ConsumptionDetailPage> {
 }
 
 // =============================================================================
-// 6. GAUGE PAINTER
+// 7. GAUGE PAINTER
 // =============================================================================
 
 class GaugePainter extends CustomPainter {
@@ -936,7 +1584,48 @@ class GaugePainter extends CustomPainter {
 }
 
 // =============================================================================
-// 7. HISTORIE PAGINA
+// 8. APK RING PAINTER
+// =============================================================================
+
+class ApkRingPainter extends CustomPainter {
+  final double progress; 
+  final Color color;
+  final Color backgroundColor;
+
+  ApkRingPainter({required this.progress, required this.color, required this.backgroundColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    // Dikte ring aangepast naar 9.0 (dunner van binnenuit)
+    final strokeWidth = 9.0;
+    final radius = min(size.width, size.height) / 2 - (strokeWidth / 2); 
+
+    // Achtergrond ring (grijs)
+    final bgPaint = Paint()
+      ..color = backgroundColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    canvas.drawCircle(center, radius, bgPaint);
+
+    // Voorgrond ring (kleur)
+    final fgPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    // Tegen de klok in
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -pi / 2, -(progress * 2 * pi), false, fgPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// =============================================================================
+// 9. HISTORIE PAGINA
 // =============================================================================
 
 class HistoryPage extends StatelessWidget {
@@ -962,7 +1651,7 @@ class HistoryPage extends StatelessWidget {
 }
 
 // =============================================================================
-// 8. TAB 3: INSTELLINGEN
+// 10. TAB 3: INSTELLINGEN
 // =============================================================================
 
 class SettingsScreen extends StatefulWidget {
@@ -984,7 +1673,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return SafeArea(child: LayoutBuilder(builder: (context, constraints) {
         return SingleChildScrollView(child: ConstrainedBox(constraints: BoxConstraints(minHeight: constraints.maxHeight), child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                 Padding(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 20), // STANDAARD HOOGTE REFERENTIE
                       _section("Personalisatie"),
                       ListTile(title: const Text("Naam aanpassen"), subtitle: Text(user['first_name'] ?? "Bestuurder"), leading: const Icon(Icons.person_outline, color: Colors.blueAccent), onTap: () => _nameDlg(context, data)),
                       ListTile(title: const Text("Begroeting"), leading: const Icon(Icons.waving_hand_outlined, color: Colors.blueAccent), trailing: buildToggle(user['use_greeting'] ?? 1, (v) => data.updateUserSettings({'use_greeting': v}))),
@@ -1001,7 +1690,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 20),
                       ListTile(title: const Text("Alle data wissen", style: TextStyle(color: Colors.red)), leading: const Icon(Icons.delete_forever_outlined, color: Colors.red), onTap: () => _clearDlg(context, data)),
                 ])),
-                Padding(padding: const EdgeInsets.all(20), child: GestureDetector(onTap: () { if (++_clicks >= 7) { _clicks = 0; bool isDeLorean = data.cars.any((c) => c.licensePlate?.toUpperCase() == 'OUTATIME'); widget.onEasterEgg(isDeLorean); } }, child: const Text("TankBuddy v1.0.79", style: TextStyle(color: Colors.grey)))),
+                Padding(padding: const EdgeInsets.all(20), child: GestureDetector(onTap: () { if (++_clicks >= 7) { _clicks = 0; bool isDeLorean = data.cars.any((c) => c.licensePlate?.toUpperCase() == 'OUTATIME'); widget.onEasterEgg(isDeLorean); } }, child: const Text("TankBuddy v1.1.00", style: TextStyle(color: Colors.grey)))),
               ],
             )));
       },
@@ -1035,7 +1724,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 }
 
 // =============================================================================
-// 9. PAAS-EI ANIMATIE
+// 11. PAAS-EI ANIMATIE
 // =============================================================================
 
 class ZoomCarEasterEgg extends StatefulWidget {
