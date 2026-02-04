@@ -1,19 +1,193 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart'; 
-import 'package:file_picker/file_picker.dart'; 
-import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart'; // Voor debugPrint
 import 'services/database_helper.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:csv/csv.dart';
 
-class DataProvider with ChangeNotifier {
-  List<Car> _cars = [];
-  Map<String, dynamic> _user = {'first_name': 'Bestuurder', 'greeting_type': 'time', 'use_greeting': 1, 'show_quotes': 1, 'theme_mode': 'system'};
-  List<Map<String, dynamic>> _allEntries = [];
+// =============================================================================
+// MODEL CLASSES
+// =============================================================================
+
+class Car {
+  final int? id;
+  final String name;
+  final String? licensePlate;
+  final String type; // 'auto', 'motor', etc.
+  final String? apkDate;
   
+  // NIEUWE VELDEN VOOR TCO
+  final double? insurance;    // Bedrag per maand
+  final double? roadTax;      // Bedrag per maand of kwartaal
+  final String roadTaxFreq;   // 'month' of 'quarter'
+
+  Car({
+    this.id, 
+    required this.name, 
+    this.licensePlate, 
+    this.type = 'auto', 
+    this.apkDate,
+    this.insurance,
+    this.roadTax,
+    this.roadTaxFreq = 'month',
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'license_plate': licensePlate,
+      'type': type,
+      'apk_date': apkDate,
+      'insurance': insurance,
+      'road_tax': roadTax,
+      'road_tax_freq': roadTaxFreq,
+    };
+  }
+
+  factory Car.fromMap(Map<String, dynamic> map) {
+    return Car(
+      id: map['id'],
+      name: map['name'],
+      licensePlate: map['license_plate'],
+      type: map['type'] ?? 'auto',
+      apkDate: map['apk_date'],
+      insurance: map['insurance'] != null ? (map['insurance'] as num).toDouble() : 0.0,
+      roadTax: map['road_tax'] != null ? (map['road_tax'] as num).toDouble() : 0.0,
+      roadTaxFreq: map['road_tax_freq'] ?? 'month',
+    );
+  }
+}
+
+// =============================================================================
+// DATA PROVIDER (STATE MANAGEMENT)
+// =============================================================================
+
+class DataProvider extends ChangeNotifier {
+  List<Car> _cars = [];
+  List<Map<String, dynamic>> _entries = [];
+  Map<String, dynamic> _user = {};
+  ThemeMode _themeMode = ThemeMode.system;
+
   List<Car> get cars => _cars;
   Map<String, dynamic> get user => _user;
+  ThemeMode get themeMode => _themeMode;
+
+  Future<void> loadData() async {
+    _cars = await DatabaseHelper.instance.getCars();
+    _entries = await DatabaseHelper.instance.getEntries();
+    _user = await DatabaseHelper.instance.getUserSettings();
+    
+    String? t = _user['theme_mode'];
+    if (t == 'light') {
+      _themeMode = ThemeMode.light;
+    } else if (t == 'dark') {
+      _themeMode = ThemeMode.dark;
+    } else {
+      _themeMode = ThemeMode.system;
+    }
+
+    notifyListeners();
+  }
+
+  // --- CAR ACTIONS ---
+  Future<void> addCar(Car car) async {
+    await DatabaseHelper.instance.addCar(car);
+    await loadData();
+  }
+
+  Future<void> updateCar(Car car) async {
+    if (car.id == null) {
+      await addCar(car);
+    } else {
+      await DatabaseHelper.instance.updateCar(car);
+      await loadData();
+    }
+  }
+
+  Future<void> deleteCar(int id) async {
+    await DatabaseHelper.instance.deleteCar(id);
+    await loadData();
+  }
+
+  // --- ENTRY ACTIONS ---
+  Future<void> addEntry(int carId, DateTime date, double odo, double liters, double price) async {
+    double pricePerLiter = liters > 0 ? price / liters : 0;
+    Map<String, dynamic> entry = {
+      'car_id': carId,
+      'date': date.toIso8601String(),
+      'odometer': odo,
+      'liters': liters,
+      'price_total': price,
+      'price_per_liter': pricePerLiter
+    };
+    await DatabaseHelper.instance.addEntry(entry);
+    await loadData();
+  }
+
+  // --- SETTINGS ACTIONS ---
+  Future<void> updateUserSettings(Map<String, dynamic> updates) async {
+    await DatabaseHelper.instance.updateUser(updates);
+    await loadData();
+  }
+
+  // --- HELPERS ---
+  List<Map<String, dynamic>> getEntriesForCar(int? carId) {
+    if (carId == null) return [];
+    return _entries.where((e) => e['car_id'] == carId).toList();
+  }
+
+  Map<String, dynamic> getStats(int? carId) {
+    final list = getEntriesForCar(carId);
+    if (list.isEmpty) return {'avgCons': 0.0, 'lastCons': 0.0, 'lastPrice': 0.0, 'lastDist': 0.0};
+
+    // Sorteer op datum (oud -> nieuw)
+    list.sort((a, b) => a['date'].compareTo(b['date']));
+
+    double totalDist = 0;
+    double totalLiters = 0;
+    double lastCons = 0;
+    double lastDist = 0;
+
+    // Gemiddeld verbruik berekening
+    if (list.length > 1) {
+      double startOdo = (list.first['odometer'] as num).toDouble();
+      double endOdo = (list.last['odometer'] as num).toDouble();
+      totalDist = endOdo - startOdo;
+      
+      // We tellen alle liters op behalve de allereerste tankbeurt (startpunt meting)
+      totalLiters = list.skip(1).map((e) => (e['liters'] as num).toDouble()).reduce((a, b) => a + b);
+    }
+
+    double avg = (totalLiters > 0) ? totalDist / totalLiters : 0;
+
+    // Laatste verbruik (alleen als er minstens 2 entries zijn)
+    if (list.length > 1) {
+      var last = list.last;
+      var prev = list[list.length - 2];
+      double d = (last['odometer'] as num).toDouble() - (prev['odometer'] as num).toDouble();
+      double l = (last['liters'] as num).toDouble();
+      lastDist = d;
+      if (l > 0) lastCons = d / l;
+    }
+
+    return {
+      'avgCons': avg,
+      'lastCons': lastCons,
+      'lastPrice': (list.last['price_per_liter'] as num).toDouble(),
+      'lastDist': lastDist
+    };
+  }
+  
+  String getGreeting() {
+    var hour = DateTime.now().hour;
+    if (hour < 6) return "Goedenacht,";
+    if (hour < 12) return "Goedemorgen,";
+    if (hour < 18) return "Goedemiddag,";
+    return "Goedenavond,";
+  }
 
   IconData getVehicleIcon(String type) {
     switch (type.toLowerCase()) {
@@ -27,178 +201,64 @@ class DataProvider with ChangeNotifier {
     }
   }
 
-  List<Map<String, dynamic>> getEntriesForCar(int? carId) {
-    if (carId == null) return [];
-    return _allEntries.where((e) => e['car_id'] == carId).toList();
-  }
-
-  ThemeMode get themeMode {
-    final mode = _user['theme_mode'] ?? 'system';
-    return mode == 'light' ? ThemeMode.light : mode == 'dark' ? ThemeMode.dark : ThemeMode.system;
-  }
-
-  Future<void> loadData() async {
-    _cars = await DatabaseHelper.instance.getAllCars();
-    _user = await DatabaseHelper.instance.getUser();
-    _allEntries = await DatabaseHelper.instance.getAllEntries();
-    notifyListeners();
-  }
-
-  List<Map<String, dynamic>> _getSortedEntries(int? carId) {
-    final entries = getEntriesForCar(carId);
-    entries.sort((a, b) => (a['odometer'] as num).compareTo(b['odometer'] as num));
-    return entries;
-  }
-
-  List<Map<String, dynamic>> getConsumptionHistory(int? carId) {
-    final sorted = _getSortedEntries(carId);
-    if (sorted.length < 2) return [];
-
-    List<Map<String, dynamic>> history = [];
-
-    for (int i = 1; i < sorted.length; i++) {
-      final current = sorted[i];
-      final previous = sorted[i - 1];
-
-      // FIX: .toDouble() toegevoegd om type errors te voorkomen
-      double distance = ((current['odometer'] as num) - (previous['odometer'] as num)).toDouble();
-      double liters = (current['liters'] as num).toDouble();
-
-      if (liters > 0 && distance > 0) {
-        double consumption = distance / liters; 
-        history.add({
-          'val': consumption,
-          'date': current['date'],
-          'distance': distance,
-          'liters': liters,
-        });
-      }
-    }
-    return history;
-  }
-
-  Map<String, dynamic> getStats(int? carId) {
-    final sorted = _getSortedEntries(carId);
-    
-    double avgCons = 0.0;
-    double lastDist = 0.0;
-    double lastPrice = 0.0;
-    double lastCons = 0.0;
-
-    if (sorted.isNotEmpty) {
-      final latest = sorted.last;
-      lastPrice = (latest['price_total'] as num).toDouble() / (latest['liters'] as num).toDouble();
-
-      if (sorted.length > 1) {
-        final previous = sorted[sorted.length - 2];
-        final oldest = sorted.first;
-
-        // FIX: .toDouble() toegevoegd
-        lastDist = ((latest['odometer'] as num) - (previous['odometer'] as num)).toDouble();
-        lastCons = (latest['liters'] as num) > 0 ? lastDist / (latest['liters'] as num).toDouble() : 0.0;
-
-        double totalDist = ((latest['odometer'] as num) - (oldest['odometer'] as num)).toDouble();
-        double totalLiters = sorted.skip(1).fold(0.0, (sum, e) => sum + (e['liters'] as num).toDouble());
-
-        avgCons = totalLiters > 0 ? totalDist / totalLiters : 0.0;
-      }
-    }
-    return {
-      'avgCons': avgCons, 
-      'lastDist': lastDist, 
-      'lastPrice': lastPrice, 
-      'lastCons': lastCons
-    };
-  }
-
-  Future<void> exportCSV() async {
-    StringBuffer csv = StringBuffer();
-    csv.writeln("Datum,Tijd,Voertuig,Kenteken,Kilometerstand,Liters,Totaal Prijs,Literprijs");
-    for (var e in _allEntries) {
-      final car = _cars.firstWhere((c) => c.id == e['car_id'], orElse: () => Car(name: "Onbekend", type: "auto"));
-      final date = DateTime.parse(e['date']);
-      final literPrijs = (e['price_total'] / e['liters']).toStringAsFixed(3);
-      csv.writeln("${DateFormat('dd-MM-yyyy').format(date)},${DateFormat('HH:mm').format(date)},${car.name},${car.licensePlate ?? ''},${e['odometer']},${e['liters']},${e['price_total']},$literPrijs");
-    }
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/tankbuddy_export.csv');
-    await file.writeAsString(csv.toString());
-    await Share.shareXFiles([XFile(file.path)], text: 'Mijn TankBuddy Excel Export');
-  }
-
-  Future<String> _generateJsonData() async {
-    final data = {'version': 1, 'timestamp': DateTime.now().toIso8601String(), 'user': _user, 'cars': _cars.map((c) => c.toMap()).toList(), 'entries': _allEntries};
-    return jsonEncode(data);
-  }
-
-  Future<void> exportDataShare() async {
-    final jsonString = await _generateJsonData();
-    final dir = await getTemporaryDirectory();
-    final fileName = "tankbuddy_backup_${DateFormat('yyyyMMdd').format(DateTime.now())}.json";
-    final file = File('${dir.path}/$fileName');
-    await file.writeAsString(jsonString);
-    await Share.shareXFiles([XFile(file.path)], text: 'Mijn TankBuddy Backup');
-  }
-
+  // --- BACKUP & EXPORT ---
   Future<void> saveLocalBackup() async {
-    final jsonString = await _generateJsonData();
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/tankbuddy_local_backup.json');
-    await file.writeAsString(jsonString);
-  }
-
-  Future<bool> _processImport(String jsonContent) async {
-    try {
-      final data = jsonDecode(jsonContent);
-      await DatabaseHelper.instance.clearAllData();
-      if (data['user'] != null) { Map<String, dynamic> u = data['user']; u.remove('id'); await DatabaseHelper.instance.updateUser(u); }
-      for (var c in data['cars']) { await DatabaseHelper.instance.createCar(Car.fromMap(c)); }
-      for (var e in data['entries']) { await DatabaseHelper.instance.insertEntry(e); }
-      await loadData();
-      return true;
-    } catch (e) { return false; }
-  }
-
-  Future<bool> importDataPicker() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
-      if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
-        return await _processImport(await file.readAsString());
-      }
-      return false; 
-    } catch (e) { return false; }
+    final dbPath = await DatabaseHelper.instance.getDbPath();
+    final directory = await getApplicationDocumentsDirectory();
+    final backupPath = '${directory.path}/tankbuddy_backup.db';
+    await File(dbPath).copy(backupPath);
   }
 
   Future<bool> importLocalBackup() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/tankbuddy_local_backup.json');
-      if (!await file.exists()) return false;
-      return await _processImport(await file.readAsString());
-    } catch (e) { return false; }
-  }
-
-  String getGreeting() {
-    if ((_user['use_greeting'] ?? 1) == 0) return "Hallo";
-    final hour = DateTime.now().hour;
-    if (hour < 12) return "Goedemorgen";
-    if (hour < 18) return "Goedemiddag";
-    return "Goedenavond";
-  }
-
-  Future<void> addEntry(int carId, DateTime date, double odo, double l, double p) async {
-    await DatabaseHelper.instance.insertEntry({'car_id': carId, 'date': date.toIso8601String(), 'odometer': odo, 'liters': l, 'price_total': p});
-    await loadData();
+      final directory = await getApplicationDocumentsDirectory();
+      final backupPath = '${directory.path}/tankbuddy_backup.db';
+      final file = File(backupPath);
+      if (await file.exists()) {
+        await DatabaseHelper.instance.restoreBackup(backupPath);
+        await loadData();
+        return true;
+      }
+    } catch (e) {
+      debugPrint(e.toString());
+    }
+    return false;
   }
   
-  Future<void> updateUserSettings(Map<String, dynamic> s) async { await DatabaseHelper.instance.updateUser(s); await loadData(); }
-  
-  Future<void> updateCar(Car car) async { 
-    car.id == null ? await DatabaseHelper.instance.createCar(car) : await DatabaseHelper.instance.updateCar(car); 
-    await loadData(); 
+  Future<void> exportDataShare() async {
+    final dbPath = await DatabaseHelper.instance.getDbPath();
+    await Share.shareXFiles([XFile(dbPath)], text: 'Hier is mijn TankBuddy backup!');
   }
 
-  Future<void> deleteCar(int id) async { await DatabaseHelper.instance.deleteCar(id); await loadData(); }
-  Future<void> deleteEntry(int id) async { await DatabaseHelper.instance.deleteEntry(id); await loadData(); }
+  Future<bool> importDataPicker() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles();
+      if (result != null) {
+        File file = File(result.files.single.path!);
+        await DatabaseHelper.instance.restoreBackup(file.path);
+        await loadData();
+        return true;
+      }
+    } catch (e) {
+      debugPrint(e.toString());
+    }
+    return false;
+  }
+
+  Future<void> exportCSV() async {
+    List<List<dynamic>> rows = [];
+    rows.add(["Datum", "Auto", "KM Stand", "Liters", "Prijs Totaal", "Prijs/L"]);
+    
+    for (var e in _entries) {
+      String carName = _cars.firstWhere((c) => c.id == e['car_id'], orElse: () => Car(name: "?")).name;
+      rows.add([e['date'], carName, e['odometer'], e['liters'], e['price_total'], e['price_per_liter']]);
+    }
+
+    String csv = const ListToCsvConverter().convert(rows);
+    final directory = await getApplicationDocumentsDirectory();
+    final path = "${directory.path}/tankbuddy_export.csv";
+    File f = File(path);
+    await f.writeAsString(csv);
+    await Share.shareXFiles([XFile(path)], text: 'Mijn TankBuddy Excel Export');
+  }
 }

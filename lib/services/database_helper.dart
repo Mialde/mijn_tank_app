@@ -1,70 +1,163 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
-
-class Car {
-  final int? id;
-  String name;
-  String? licensePlate;
-  String? apkDate;
-  String type; // Nieuw: auto, motor, scooter, etc.
-
-  Car({
-    this.id, 
-    required this.name, 
-    this.licensePlate, 
-    this.apkDate,
-    this.type = 'auto' // Standaard is het een auto
-  });
-
-  Map<String, dynamic> toMap() => {
-    'id': id, 
-    'name': name, 
-    'license_plate': licensePlate, 
-    'apk_date': apkDate,
-    'type': type
-  };
-
-  factory Car.fromMap(Map<String, dynamic> map) => Car(
-    id: map['id'], 
-    name: map['name'] ?? '', 
-    licensePlate: map['license_plate'], 
-    apkDate: map['apk_date'],
-    type: map['type'] ?? 'auto'
-  );
-}
+import '../data_provider.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+
   DatabaseHelper._init();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('tankbuddy_v45.db'); // Versienummer iets opgehoogd voor verse start
+    _database = await _initDB('tankbuddy_v3.db'); // Naam iets veranderd om verse start te forceren als je wilt
     return _database!;
   }
 
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getApplicationDocumentsDirectory();
-    return await openDatabase(join(dbPath.path, filePath), version: 1, onCreate: (db, v) async {
-      // Tabel aangepast met 'type' kolom
-      await db.execute('CREATE TABLE cars (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, license_plate TEXT, apk_date TEXT, type TEXT)');
-      await db.execute('CREATE TABLE user_settings (id INTEGER PRIMARY KEY, first_name TEXT, theme_mode TEXT, use_greeting INTEGER, show_quotes INTEGER, greeting_type TEXT)');
-      await db.execute('CREATE TABLE entries (id INTEGER PRIMARY KEY AUTOINCREMENT, car_id INTEGER, date TEXT, odometer REAL, liters REAL, price_total REAL)');
-      await db.insert('user_settings', {'id': 1, 'first_name': 'Bestuurder', 'theme_mode': 'system', 'use_greeting': 1, 'show_quotes': 1, 'greeting_type': 'time'});
-    });
+  Future<String> getDbPath() async {
+    final dbPath = await getDatabasesPath();
+    return join(dbPath, 'tankbuddy_v3.db');
   }
 
-  Future<void> clearAllData() async { final db = await database; await db.delete('entries'); await db.delete('cars'); }
-  Future<int> createCar(Car car) async => (await database).insert('cars', car.toMap());
-  Future<int> updateCar(Car car) async => (await database).update('cars', car.toMap(), where: 'id = ?', whereArgs: [car.id]);
-  Future<int> deleteCar(int id) async => (await database).delete('cars', where: 'id = ?', whereArgs: [id]);
-  Future<List<Car>> getAllCars() async => (await (await database).query('cars')).map((json) => Car.fromMap(json)).toList();
-  Future<int> insertEntry(Map<String, dynamic> row) async => (await database).insert('entries', row);
-  Future<int> updateEntry(Map<String, dynamic> row) async => (await database).update('entries', row, where: 'id = ?', whereArgs: [row['id']]);
-  Future<int> deleteEntry(int id) async => (await database).delete('entries', where: 'id = ?', whereArgs: [id]);
-  Future<List<Map<String, dynamic>>> getAllEntries() async => (await (await database).query('entries', orderBy: 'date DESC'));
-  Future<Map<String, dynamic>> getUser() async => (await (await database).query('user_settings', where: 'id = 1')).first;
-  Future<int> updateUser(Map<String, dynamic> data) async => (await database).update('user_settings', data, where: 'id = 1');
+  Future<Database> _initDB(String filePath) async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, filePath);
+
+    return await openDatabase(path, version: 2, onCreate: _createDB, onUpgrade: _onUpgrade);
+  }
+
+  Future _createDB(Database db, int version) async {
+    const idType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
+    const textType = 'TEXT';
+    const numType = 'REAL';
+
+    // AUTO TABEL (AANGEPAST MET NIEUWE VELDEN)
+    await db.execute('''
+      CREATE TABLE cars (
+        id $idType,
+        name $textType,
+        license_plate $textType,
+        type $textType,
+        apk_date $textType,
+        insurance $numType,
+        road_tax $numType,
+        road_tax_freq $textType
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE entries (
+        id $idType,
+        car_id INTEGER,
+        date $textType,
+        odometer $numType,
+        liters $numType,
+        price_total $numType,
+        price_per_liter $numType
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE user_settings (
+        id $idType,
+        first_name $textType,
+        theme_mode $textType,
+        use_greeting INTEGER,
+        show_quotes INTEGER
+      )
+    ''');
+    
+    // Default user record
+    await db.insert('user_settings', {'first_name': 'Bestuurder', 'theme_mode': 'system', 'use_greeting': 1, 'show_quotes': 1});
+  }
+
+  // Eenvoudige upgrade logica: als je een oude app hebt, voegt hij de kolommen toe zonder dataverlies
+  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      try {
+        await db.execute("ALTER TABLE cars ADD COLUMN insurance REAL");
+        await db.execute("ALTER TABLE cars ADD COLUMN road_tax REAL");
+        await db.execute("ALTER TABLE cars ADD COLUMN road_tax_freq TEXT");
+      } catch (e) {
+        // Kolommen bestaan misschien al, negeer
+      }
+    }
+  }
+
+  // --- CRUD CARS ---
+  Future<List<Car>> getCars() async {
+    final db = await instance.database;
+    final result = await db.query('cars');
+    return result.map((json) => Car.fromMap(json)).toList();
+  }
+
+  Future<int> addCar(Car car) async {
+    final db = await instance.database;
+    return await db.insert('cars', car.toMap());
+  }
+
+  Future<int> updateCar(Car car) async {
+    final db = await instance.database;
+    return await db.update('cars', car.toMap(), where: 'id = ?', whereArgs: [car.id]);
+  }
+
+  Future<int> deleteCar(int id) async {
+    final db = await instance.database;
+    await db.delete('entries', where: 'car_id = ?', whereArgs: [id]); // Cascade delete entries
+    return await db.delete('cars', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- CRUD ENTRIES ---
+  Future<List<Map<String, dynamic>>> getEntries() async {
+    final db = await instance.database;
+    return await db.query('entries');
+  }
+
+  Future<int> addEntry(Map<String, dynamic> entry) async {
+    final db = await instance.database;
+    return await db.insert('entries', entry);
+  }
+
+  Future<int> deleteEntry(int id) async {
+    final db = await instance.database;
+    return await db.delete('entries', where: 'id = ?', whereArgs: [id]);
+  }
+  
+  Future<void> clearAllData() async {
+    final db = await instance.database;
+    await db.delete('entries');
+    await db.delete('cars');
+    // User settings resetten we liever niet helemaal, of wel:
+    // await db.delete('user_settings'); 
+    // await db.insert('user_settings', {'first_name': 'Bestuurder', 'theme_mode': 'system', 'use_greeting': 1, 'show_quotes': 1});
+  }
+
+  // --- USER SETTINGS ---
+  Future<Map<String, dynamic>> getUserSettings() async {
+    final db = await instance.database;
+    final res = await db.query('user_settings');
+    if (res.isNotEmpty) return res.first;
+    return {};
+  }
+
+  Future<int> updateUser(Map<String, dynamic> updates) async {
+    final db = await instance.database;
+    return await db.update('user_settings', updates, where: 'id = ?', whereArgs: [1]); // Altijd row 1
+  }
+
+  // --- RESTORE ---
+  Future<void> restoreBackup(String path) async {
+    final dbPath = await getDbPath();
+    // Sluit huidige connectie
+    if (_database != null && _database!.isOpen) {
+      await _database!.close();
+      _database = null;
+    }
+    // Overschrijf bestand
+    await File(path).copy(dbPath);
+    // Heropen
+    _database = await _initDB('tankbuddy_v3.db');
+  }
 }
