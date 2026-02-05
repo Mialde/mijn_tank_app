@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data_provider.dart';
 import '../widgets/painters.dart';
+import '../widgets/stats_carousel.dart'; // <--- NIEUWE IMPORT
+// import '../widgets/distribution_charts.dart';
 
 import '../details/liters_detail_page.dart';
 import '../details/consumption_detail_page.dart';
@@ -18,7 +20,6 @@ class StatsScreen extends StatefulWidget {
 
 class _StatsScreenState extends State<StatsScreen> {
   int? _selCarId;
-  final _statsCarDisplayCtrl = TextEditingController();
   
   final List<String> _allPossibleTiles = ['cons', 'apk', 'price', 'dist', 'liters', 'cost', 'hist'];
   
@@ -152,13 +153,13 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget build(BuildContext context) {
     final data = context.watch<DataProvider>();
     
+    // Auto selectie logica
     if (_selCarId == null && data.cars.isNotEmpty) { 
       _selCarId = data.cars.first.id; 
     }
     Car? selectedCar;
     if (_selCarId != null && data.cars.isNotEmpty) {
       selectedCar = data.cars.firstWhere((c) => c.id == _selCarId, orElse: () => data.cars.first);
-      _statsCarDisplayCtrl.text = selectedCar.name;
     }
 
     final stats = data.getStats(_selCarId);
@@ -170,17 +171,20 @@ class _StatsScreenState extends State<StatsScreen> {
     double trueCostPerKm = 0;
 
     if (entries.isNotEmpty) {
-      entries.sort((a, b) => b['date'].compareTo(a['date']));
+      entries.sort((a, b) => b['date'].compareTo(a['date'])); // Nieuwste eerst
       lastLiters = (entries.first['liters'] as num).toDouble();
       DateTime dt = DateTime.parse(entries.first['date']);
       lastDate = "${dt.day}-${dt.month}-${dt.year}";
 
+      // TCO Berekening
       if (entries.length > 1) {
         var sorted = List<Map<String, dynamic>>.from(entries);
-        sorted.sort((a, b) => a['date'].compareTo(b['date']));
+        sorted.sort((a, b) => a['date'].compareTo(b['date'])); // Oud naar nieuw voor berekening
+        
         double startOdo = (sorted.first['odometer'] as num).toDouble();
         double endOdo = (sorted.last['odometer'] as num).toDouble();
         double totalDist = endOdo - startOdo;
+        
         double totalFuelCost = sorted.map((e) => (e['price_total'] as num).toDouble()).reduce((a, b) => a + b);
 
         double fixedMonthly = 0;
@@ -212,60 +216,72 @@ class _StatsScreenState extends State<StatsScreen> {
 
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        padding: const EdgeInsets.only(bottom: 20), // Iets minder padding rondom, meer onderaan
         children: [
           const SizedBox(height: 20),
-          const Text("Voertuig", style: TextStyle(fontSize: 18, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
           
-          TextField(
-            controller: _statsCarDisplayCtrl, 
-            readOnly: true, 
-            decoration: _deco("", 
-              _selCarId != null && data.cars.isNotEmpty 
-                ? data.getVehicleIcon(data.cars.firstWhere((c) => c.id == _selCarId).type) 
-                : Icons.directions_car_outlined, 
-              suffix: data.cars.length > 1 ? const Icon(Icons.arrow_drop_down, color: Colors.blueAccent) : null
-            ), 
-            onTap: () {
-              if (data.cars.isEmpty) return;
-              showModalBottomSheet(
-                context: context, 
-                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
-                builder: (ctx) => Container(
-                  padding: const EdgeInsets.all(20), 
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      const Text("Kies een voertuig", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), 
-                      const SizedBox(height: 10), 
-                      ...data.cars.map((c) => ListTile(
-                        leading: Icon(data.getVehicleIcon(c.type), color: Colors.blueAccent), 
-                        title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)), 
-                        subtitle: Text(c.licensePlate ?? ""), 
-                        onTap: () { setState(() => _selCarId = c.id); Navigator.pop(ctx); }, 
-                        trailing: _selCarId == c.id ? const Icon(Icons.check_circle, color: Colors.green) : null
-                      ))
-                  ])
-                )
-              );
-            }
-          ),
-          
-          const SizedBox(height: 24),
-          
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.0, 
+          // --- HEADER: Titel & Dropdown ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Overzicht", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                if (data.cars.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)]
+                    ),
+                    child: DropdownButton<int>(
+                       value: _selCarId,
+                       underline: Container(), // Geen lijntje
+                       icon: const Icon(Icons.keyboard_arrow_down, color: Colors.blueAccent),
+                       style: TextStyle(
+                         color: Theme.of(context).textTheme.bodyLarge?.color,
+                         fontWeight: FontWeight.bold
+                       ),
+                       items: data.cars.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                       onChanged: (v) => setState(() => _selCarId = v),
+                    ),
+                  ),
+              ],
             ),
-            itemCount: visibleTiles.length,
-            itemBuilder: (context, index) {
-              final key = visibleTiles[index];
-              return _buildTileContent(key, stats, selectedCar, lastDate, trueCostPerKm);
-            },
+          ),
+
+          const SizedBox(height: 24),
+
+          // --- STATS CAROUSEL (PeerBerry Stijl) ---
+          StatsCarousel(
+            entries: entries, 
+            isDark: Theme.of(context).brightness == Brightness.dark
+          ),
+  //        DistributionCharts(
+ //           entries: entries, 
+ //           isDark: Theme.of(context).brightness == Brightness.dark
+ //         ),
+          const SizedBox(height: 24),
+
+          // --- GRID TEGELS ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 1.0, 
+              ),
+              itemCount: visibleTiles.length,
+              itemBuilder: (context, index) {
+                final key = visibleTiles[index];
+                return _buildTileContent(key, stats, selectedCar, lastDate, trueCostPerKm);
+              },
+            ),
           ),
           const SizedBox(height: 20),
         ],
@@ -273,7 +289,7 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  // --- AANGEPAST: Geen Material/InkWell meer, maar pure GestureDetector ---
+  // --- STEALTH MODE TILE (Geen Material Ripple) ---
   Widget _baseTile({required Widget child, required VoidCallback onTap, VoidCallback? onLongPress}) {
     return GestureDetector(
       onTap: onTap,
@@ -283,8 +299,8 @@ class _StatsScreenState extends State<StatsScreen> {
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(24),
-          // De schaduw blijft, maar de klik is onzichtbaar
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+          // Subtiele schaduw, maar geen interactie effecten
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
         ),
         child: child,
       ),
@@ -522,22 +538,9 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  // AANGEPAST: De functie weer toegevoegd om crash te voorkomen
   String _getMonthAbbr(int m) {
     const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
     if (m < 1 || m > 12) return "";
     return months[m - 1];
   }
-
-  InputDecoration _deco(String label, IconData icon, {Widget? suffix}) => InputDecoration(
-    labelText: label.isEmpty ? null : label, 
-    prefixIcon: Icon(icon, color: Colors.blueAccent), 
-    suffixIcon: suffix, 
-    filled: true, 
-    fillColor: Theme.of(context).cardColor, 
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none), 
-    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none), 
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Colors.blueAccent, width: 2)), 
-    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20)
-  );
 }
