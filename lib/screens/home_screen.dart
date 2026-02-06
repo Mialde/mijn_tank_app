@@ -38,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onPageChanged: (i) => setState(() => _curr = i),
           children: [
             const TankbeurtScreen(), 
-            const StatsScreen(),     
+            const DashboardScreen(),     
             SettingsScreen(          
               onBugEgg: () => setState(() => _activeEgg = 'bug'),
               onRocketEgg: (isTimeMachine) => setState(() {

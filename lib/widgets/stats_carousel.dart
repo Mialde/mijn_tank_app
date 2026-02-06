@@ -55,7 +55,7 @@ class _StatsCarouselState extends State<StatsCarousel> {
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 15),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(25, 20, 5, 20),
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(24),
@@ -99,11 +99,12 @@ class _StatsCarouselState extends State<StatsCarousel> {
               ),
             ),
             const SizedBox(height: 15),
+            
             SizedBox(
               height: 200,
-              child: _showLineChart
-                  ? _buildConsumptionLineChart(chartData, globalAvg)
-                  : _buildConsumptionBarChart(chartData, globalAvg),
+              child: IgnorePointer(
+                child: _buildUniversalChart(chartData, globalAvg),
+              ),
             ),
           ],
         ),
@@ -130,240 +131,201 @@ class _StatsCarouselState extends State<StatsCarousel> {
   _ChartScaling _calculateYAxisScaling(List<Map<String, dynamic>> points, double avg) {
     if (points.isEmpty) return _ChartScaling(minY: 0, maxY: 20, interval: 5);
     double maxData = avg;
-    for (var p in points) {
-      if (p['y'] > maxData) maxData = p['y'];
-    }
+    for (var p in points) { if (p['y'] > maxData) maxData = p['y']; }
     const double interval = 5.0;
     double finalMax = (maxData / interval).ceil() * interval + interval;
-    return _ChartScaling(minY: 0, maxY: finalMax < 20 ? 20 : finalMax, interval: interval);
+    if (finalMax < 20) finalMax = 20;
+    return _ChartScaling(minY: 0, maxY: finalMax, interval: interval);
   }
 
-  // --- LIJN GRAFIEK ---
-  Widget _buildConsumptionLineChart(List<Map<String, dynamic>> rawData, double globalAvg) {
+  // --- DE CHART ---
+  Widget _buildUniversalChart(List<Map<String, dynamic>> rawData, double globalAvg) {
     final points = _calculateConsumptionPoints(rawData);
     if (points.isEmpty) return const SizedBox();
     final scaling = _calculateYAxisScaling(points, globalAvg);
-    final tooltipTextColor = widget.isDark ? Colors.white : Colors.black;
+    
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: BarChart(
+            BarChartData(
+              alignment: BarChartAlignment.spaceBetween,
+              maxY: scaling.maxY, 
+              minY: scaling.minY,
 
-    return LineChart(
-      LineChartData(
-        extraLinesData: ExtraLinesData(horizontalLines: [
-          HorizontalLine(
-            y: globalAvg,
-            color: Colors.grey.withValues(alpha: 0.5),
-            strokeWidth: 2,
-            dashArray: [5, 5],
-          )
-        ]),
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipColor: (_) => Colors.transparent,
-            getTooltipItems: (spots) => spots
-                .map((s) => LineTooltipItem('1:${s.y.round()}',
-                    TextStyle(color: tooltipTextColor, fontSize: 18, fontWeight: FontWeight.bold)))
-                .toList(),
+              gridData: FlGridData(
+                show: true, 
+                drawVerticalLine: false, 
+                horizontalInterval: scaling.interval,
+                getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withValues(alpha: 0.1), strokeWidth: 1),
+              ),
+              
+              titlesData: _buildTitlesData(points, globalAvg, scaling, showTexts: true),
+              borderData: FlBorderData(show: false),
+              
+              barTouchData: _buildFixedTooltipData(),
+              
+              extraLinesData: ExtraLinesData(horizontalLines: [
+                HorizontalLine(
+                  y: globalAvg, 
+                  color: Colors.grey.withValues(alpha: 0.5), 
+                  strokeWidth: 2, 
+                  dashArray: [5, 5]
+                )
+              ]),
+              
+              barGroups: points.map((p) {
+                double hoverHeight = p['y'] + (scaling.maxY - p['y']) * 0.5;
+                final double width = _showLineChart ? 1.5 : 14.0;
+                
+                return BarChartGroupData(
+                  x: p['x'].toInt(),
+                  showingTooltipIndicators: [0], 
+                  barRods: [
+                    BarChartRodData(
+                      toY: hoverHeight, 
+                      width: width,
+                      color: Colors.transparent, 
+                      rodStackItems: _showLineChart 
+                        ? [
+                            BarChartRodStackItem(0, p['y'], widget.isDark ? Colors.white24 : Colors.black12),
+                            BarChartRodStackItem(p['y'], hoverHeight, Colors.transparent),
+                          ]
+                        : [
+                            BarChartRodStackItem(0, p['y'], Colors.blueAccent),
+                            BarChartRodStackItem(p['y'], hoverHeight, Colors.transparent),
+                          ],
+                      borderRadius: _showLineChart ? BorderRadius.zero : const BorderRadius.vertical(top: Radius.circular(4)),
+                    )
+                  ],
+                );
+              }).toList(),
+            ),
           ),
-          handleBuiltInTouches: true,
         ),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: scaling.interval,
-          getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withValues(alpha: 0.15), strokeWidth: 1),
-        ),
-        titlesData: FlTitlesData(
-          show: true,
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          
-          // RECHTER AS LABEL HERSTELD
-          rightTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 30,
-              interval: 1,
-              getTitlesWidget: (value, meta) {
-                if (value.toInt() == globalAvg.round()) {
-                  return Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text("Gem.", style: TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
-                        Text("1:${globalAvg.round()}",
-                            style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
-                      ],
+
+        if (_showLineChart)
+          Positioned.fill(
+            child: LineChart(
+              LineChartData(
+                minX: 0,
+                maxX: (points.length - 1).toDouble(),
+                minY: scaling.minY, 
+                maxY: scaling.maxY,
+                
+                gridData: FlGridData(show: false),
+                titlesData: _buildTitlesData(points, globalAvg, scaling, showTexts: false),
+                borderData: FlBorderData(show: false),
+                
+                extraLinesData: ExtraLinesData(horizontalLines: []),
+
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: points.map((p) => FlSpot(p['x'], p['y'])).toList(),
+                    isCurved: true,
+                    curveSmoothness: 0.35,
+                    color: Colors.blueAccent,
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: FlDotData(
+                      show: true,
+                      getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                        radius: 4,
+                        color: widget.isDark ? Colors.black : Colors.white, 
+                        strokeWidth: 2,
+                        strokeColor: Colors.blueAccent,
+                      ),
                     ),
-                  );
-                }
-                return const SizedBox();
-              },
-            ),
-          ),
-          
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 22,
-              interval: 1,
-              getTitlesWidget: (value, meta) {
-                if ((value - value.round()).abs() > 0.01) return const SizedBox();
-                int index = value.round();
-                if (index == 0 || index == points.length - 1) return const SizedBox();
-                if (index >= 0 && index < points.length) {
-                  if (points.length > 6 && index % 2 != 0) return const SizedBox();
-                  return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(points[index]['label'], style: TextStyle(color: Colors.grey[500], fontSize: 10)));
-                }
-                return const SizedBox();
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: scaling.interval,
-              reservedSize: 30,
-              getTitlesWidget: (value, meta) => value == scaling.minY
-                  ? const SizedBox()
-                  : Text("1:${value.toInt()}",
-                      style: TextStyle(color: Colors.grey[500], fontSize: 10, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ),
-        borderData: FlBorderData(show: false),
-        minX: -0.11,
-        maxX: (points.length - 1) + 0.11,
-        minY: scaling.minY,
-        maxY: scaling.maxY,
-        lineBarsData: [
-          LineChartBarData(
-            spots: points.map((p) => FlSpot(p['x'], p['y'])).toList(),
-            isCurved: true,
-            curveSmoothness: 0.35,
-            color: Colors.blueAccent,
-            barWidth: 3,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              gradient: LinearGradient(
-                colors: [Colors.blueAccent.withValues(alpha: 0.25), Colors.blueAccent.withValues(alpha: 0.0)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+                    belowBarData: BarAreaData(
+                      show: true,
+                      gradient: LinearGradient(
+                        colors: [Colors.blueAccent.withValues(alpha: 0.3), Colors.blueAccent.withValues(alpha: 0.0)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  )
+                ],
+                lineTouchData: LineTouchData(enabled: false), 
               ),
             ),
-          )
-        ],
+          ),
+      ],
+    );
+  }
+
+  FlTitlesData _buildTitlesData(List<Map<String, dynamic>> points, double globalAvg, _ChartScaling scaling, {required bool showTexts}) {
+    Color textColor(Color c) => showTexts ? c : Colors.transparent;
+
+    return FlTitlesData(
+      show: true,
+      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+      rightTitles: AxisTitles(
+        sideTitles: SideTitles(
+          showTitles: true,
+          reservedSize: 50, 
+          interval: 1,
+          getTitlesWidget: (value, meta) => value.toInt() == globalAvg.round()
+              ? Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Gem.", style: TextStyle(fontSize: 8, color: textColor(Colors.grey), fontWeight: FontWeight.bold)),
+                      Text("1:${globalAvg.round()}",
+                          style: TextStyle(fontSize: 8, color: textColor(Colors.grey), fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                )
+              : const SizedBox(),
+        ),
+      ),
+      bottomTitles: AxisTitles(
+        sideTitles: SideTitles(
+          showTitles: true,
+          reservedSize: 22,
+          getTitlesWidget: (value, meta) {
+            if ((value - value.round()).abs() > 0.05) return const SizedBox();
+            int index = value.round();
+            if (index >= 0 && index < points.length) {
+              if (points.length > 6 && index % 2 != 0) return const SizedBox();
+              return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(points[index]['label'], style: TextStyle(color: textColor(Colors.grey[500]!), fontSize: 9)));
+            }
+            return const SizedBox();
+          },
+        ),
+      ),
+      leftTitles: AxisTitles(
+        sideTitles: SideTitles(
+          showTitles: true,
+          interval: scaling.interval,
+          reservedSize: 32,
+          getTitlesWidget: (value, meta) => value == scaling.minY
+              ? const SizedBox()
+              : Text("1:${value.toInt()}",
+                  style: TextStyle(color: textColor(Colors.grey[500]!), fontSize: 9, fontWeight: FontWeight.bold)),
+        ),
       ),
     );
   }
 
-  // --- STAAF GRAFIEK ---
-  Widget _buildConsumptionBarChart(List<Map<String, dynamic>> rawData, double globalAvg) {
-    final points = _calculateConsumptionPoints(rawData);
-    if (points.isEmpty) return const SizedBox();
-    final scaling = _calculateYAxisScaling(points, globalAvg);
-    final tooltipTextColor = widget.isDark ? Colors.white : Colors.black;
-
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceBetween,
-        extraLinesData: ExtraLinesData(horizontalLines: [
-          HorizontalLine(y: globalAvg, color: Colors.grey.withValues(alpha: 0.5), strokeWidth: 2, dashArray: [5, 5])
-        ]),
-        barTouchData: BarTouchData(
-          touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (_) => Colors.transparent,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
-              '1:${rod.toY.round()}',
-              TextStyle(color: tooltipTextColor, fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: scaling.interval,
-          getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withValues(alpha: 0.15), strokeWidth: 1),
-        ),
-        titlesData: FlTitlesData(
-          show: true,
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          
-          // RECHTER AS LABEL HERSTELD
-          rightTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 30,
-              interval: 1,
-              getTitlesWidget: (value, meta) => value.toInt() == globalAvg.round()
-                  ? Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Gem.", style: TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
-                          Text("1:${globalAvg.round()}",
-                              style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    )
-                  : const SizedBox(),
-            ),
-          ),
-          
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 22,
-              getTitlesWidget: (value, meta) {
-                int index = value.toInt();
-                if (index >= 0 && index < points.length) {
-                  if (points.length > 6 && index % 2 != 0) return const SizedBox();
-                  return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(points[index]['label'], style: TextStyle(color: Colors.grey[500], fontSize: 10)));
-                }
-                return const SizedBox();
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: scaling.interval,
-              reservedSize: 30,
-              getTitlesWidget: (value, meta) => value == scaling.minY
-                  ? const SizedBox()
-                  : Text("1:${value.toInt()}",
-                      style: TextStyle(color: Colors.grey[500], fontSize: 10, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ),
-        borderData: FlBorderData(show: false),
-        minY: scaling.minY,
-        maxY: scaling.maxY,
-        barGroups: points
-            .map((p) => BarChartGroupData(
-                  x: p['x'].toInt(),
-                  barRods: [
-                    BarChartRodData(
-                      toY: p['y'],
-                      color: Colors.blueAccent,
-                      width: 12,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                      backDrawRodData: BackgroundBarChartRodData(
-                        show: true,
-                        toY: scaling.maxY,
-                        color: widget.isDark ? Colors.white10 : Colors.grey[100],
-                      ),
-                    )
-                  ],
-                ))
-            .toList(),
+  BarTouchData _buildFixedTooltipData() {
+    return BarTouchData(
+      enabled: false, 
+      touchTooltipData: BarTouchTooltipData(
+        getTooltipColor: (_) => Colors.transparent,
+        tooltipPadding: EdgeInsets.zero,
+        tooltipMargin: -14, 
+        getTooltipItem: (group, groupIndex, rod, rodIndex) {
+          double value = rod.rodStackItems.isNotEmpty ? rod.rodStackItems[0].toY : 0;
+          return BarTooltipItem(
+            '1:${value.round()}',
+            TextStyle(color: widget.isDark ? Colors.white : Colors.black, fontSize: 11, fontWeight: FontWeight.w600),
+          );
+        },
       ),
     );
   }
