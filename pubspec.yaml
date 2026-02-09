@@ -1,7 +1,8 @@
 name: mijn_tank_app
-description: Een moderne tank en kilometer registratie app.
+description: "A new Flutter project."
 publish_to: 'none'
-version: 1.0.74+1
+
+version: 1.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,42 +10,33 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # DIT IS DE ONTBREKENDE SCHAKEL:
   flutter_localizations:
     sdk: flutter
 
-  confetti: ^0.7.0
-
-  # State management
   provider: ^6.1.1
-  
-  # Database & Opslag
+  intl: ^0.20.2
   sqflite: ^2.3.0
   path: ^1.8.3
-  shared_preferences: ^2.2.1
-  path_provider: ^2.1.2
-
-  # Functionaliteit (Backup/Export)
-  share_plus: ^10.1.0
-  file_picker: ^8.1.2
-  csv: ^6.0.0
-  intl: ^0.20.2
-
-  # Grafieken (Versie afgestemd op jouw code)
-  fl_chart: ^1.1.1
+  excel: ^4.0.6
+  gsheets: ^0.5.0
+  http: ^1.1.0
   
-  # Iconen
-  cupertino_icons: ^1.0.2
-
-  # Google (Aanwezig op verzoek, maar niet actief in main om crashes te voorkomen)
-  google_sign_in: ^6.2.1
-  googleapis: ^13.2.0
-  extension_google_sign_in_as_googleapis_auth: ^2.0.12
-  googleapis_auth: ^1.6.0
+  google_fonts: ^5.1.0
+  font_awesome_flutter: ^10.5.0
+  fl_chart: ^0.70.2
+  flutter_slidable: ^4.0.3
+  csv: ^6.0.0
+  path_provider: ^2.1.5
+  share_plus: ^10.1.4
+  file_picker: ^8.1.7
+  pdf: ^3.11.3
+  printing: ^5.14.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
+  flutter_lints: ^2.0.0
 
 flutter:
   uses-material-design: true

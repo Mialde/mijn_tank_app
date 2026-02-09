@@ -134,7 +134,7 @@ class _DistributionChartsState extends State<DistributionCharts> {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: widget.isDark ? Colors.white.withOpacity(0.05) : Colors.grey[100],
+        color: widget.isDark ? Colors.white.withAlpha(13) : Colors.grey[100],
         borderRadius: BorderRadius.circular(15),
       ),
       child: Row(

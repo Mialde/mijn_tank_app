@@ -8,49 +8,130 @@ import 'screens/settings_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(ChangeNotifierProvider(
-    create: (context) => DataProvider()..loadData(),
-    child: const TankBuddyApp(),
-  ));
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => DataProvider()..initializeApp()),
+      ],
+      child: const MijnTankApp(),
+    ),
+  );
 }
 
-// Statische thema-definities voor betere performance
-final ThemeData _lightTheme = ThemeData(
-  useMaterial3: true,
-  brightness: Brightness.light,
-  colorSchemeSeed: Colors.blueAccent,
-  scaffoldBackgroundColor: const Color(0xFFF5F7FA),
-  cardColor: Colors.white,
-);
+class MijnTankApp extends StatefulWidget {
+  const MijnTankApp({super.key});
 
-final ThemeData _darkTheme = ThemeData(
-  useMaterial3: true,
-  brightness: Brightness.dark,
-  colorSchemeSeed: Colors.blueAccent,
-  scaffoldBackgroundColor: const Color(0xFF121212),
-  cardColor: const Color(0xFF1E1E1E),
-);
+  @override
+  State<MijnTankApp> createState() => _MijnTankAppState();
+}
 
-class TankBuddyApp extends StatelessWidget {
-  const TankBuddyApp({super.key});
+class _MijnTankAppState extends State<MijnTankApp> {
+  int _currentIndex = 0;
+  final PageController _pageController = PageController();
 
   @override
   Widget build(BuildContext context) {
-    final data = context.watch<DataProvider>();
+    final provider = context.watch<DataProvider>();
+    final settings = provider.settings;
+    final String themeModePref = settings?.themeMode ?? 'System';
     
+    // DYNAMIC COLOR MAGIC 
+    final Color appColor = provider.themeColor;
+
     return MaterialApp(
+      title: 'Mijn Tank App',
       debugShowCheckedModeBanner: false,
-      title: 'TankBuddy',
-      themeMode: data.themeMode,
-      theme: _lightTheme,
-      darkTheme: _darkTheme,
-      supportedLocales: const [Locale('nl')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const HomeScreen(),
+      supportedLocales: const [Locale('nl', 'NL')],
+      locale: const Locale('nl', 'NL'),
+      themeMode: _getThemeMode(themeModePref),
+      
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFF5F7F9),
+        // Hier gebruiken we de dynamische kleur
+        colorScheme: ColorScheme.fromSeed(seedColor: appColor, primary: appColor, surface: Colors.white),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFFF5F7F9),
+          elevation: 0,
+          centerTitle: false,
+          titleSpacing: 24,
+          titleTextStyle: TextStyle(color: Colors.black, fontSize: 22, fontWeight: FontWeight.w900),
+          iconTheme: IconThemeData(color: Colors.black),
+        ),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
+      ),
+
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF0A0C0F),
+        colorScheme: ColorScheme.fromSeed(seedColor: appColor, brightness: Brightness.dark, primary: appColor, surface: const Color(0xFF1A1D21)),
+        bottomNavigationBarTheme: BottomNavigationBarThemeData(
+          backgroundColor: const Color(0xFF1A1D21),
+          selectedItemColor: appColor, // Dynamisch
+          unselectedItemColor: Colors.white38,
+          selectedLabelStyle: TextStyle(color: appColor, fontWeight: FontWeight.bold, fontSize: 12),
+          unselectedLabelStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+          selectedIconTheme: IconThemeData(color: appColor, size: 28),
+          showUnselectedLabels: true,
+          type: BottomNavigationBarType.fixed,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF0A0C0F),
+          elevation: 0,
+          centerTitle: false,
+          titleSpacing: 24,
+        ),
+        cardTheme: CardThemeData(
+          color: const Color(0xFF1A1D21),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: Colors.white10, width: 1),
+          ),
+        ),
+      ),
+      home: Scaffold(
+        body: PageView(
+          controller: _pageController,
+          onPageChanged: (index) => setState(() => _currentIndex = index),
+          children: const [
+            InputScreen(),
+            DashboardScreen(),
+            SettingsScreen(),
+          ],
+        ),
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: (index) {
+            setState(() => _currentIndex = index);
+            _pageController.animateToPage(index, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+          },
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.local_gas_station_outlined), activeIcon: Icon(Icons.local_gas_station), label: 'Tanken'),
+            BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), activeIcon: Icon(Icons.dashboard), label: 'Overzicht'),
+            BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), activeIcon: Icon(Icons.settings), label: 'Instellingen'),
+          ],
+        ),
+      ),
     );
+  }
+
+  ThemeMode _getThemeMode(String mode) {
+    switch (mode) {
+      case 'Light': return ThemeMode.light;
+      case 'Dark': return ThemeMode.dark;
+      default: return ThemeMode.system;
+    }
   }
 }

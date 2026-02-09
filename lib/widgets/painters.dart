@@ -12,7 +12,7 @@ class GaugePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height * 0.8);
     final radius = size.width * 0.45;
-    final thickness = 8.0;
+    const thickness = 8.0;
 
     // 1. Achtergrond boog (Spoor)
     final trackPaint = Paint()

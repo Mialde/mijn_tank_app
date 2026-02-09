@@ -1,434 +1,426 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:confetti/confetti.dart';
-import 'dart:math';
 import '../data_provider.dart';
-import '../services/database_helper.dart';
+import '../services/data_service.dart';
+import '../models/car.dart';
+import 'developer_notes_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  final VoidCallback onBugEgg;      
-  final Function(bool) onRocketEgg; 
-  
-  const SettingsScreen({
-    super.key, 
-    required this.onBugEgg, 
-    required this.onRocketEgg
-  });
-  
+  const SettingsScreen({super.key});
+
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
-  int _clicks = 0;
-  late ConfettiController _confettiCtrl;
-  
-  late AnimationController _pulseCtrl;
-  late Animation<Color?> _pulseColor;
+class _SettingsScreenState extends State<SettingsScreen> {
+  late TextEditingController _nameController;
+  final List<String> _vehicleTypes = ['Auto', 'Motor', 'Vrachtwagen', 'Scooter', 'Bus', 'Camper', 'Tractor', 'Bestelwagen'];
+  final String _version = "v1.0.4 (Beta)";
 
   @override
   void initState() {
     super.initState();
-    _confettiCtrl = ConfettiController(duration: const Duration(seconds: 3));
-
-    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true);
-    _pulseColor = ColorTween(begin: Colors.grey[400], end: Colors.greenAccent[700]).animate(_pulseCtrl);
+    _nameController = TextEditingController(text: context.read<DataProvider>().settings?.firstName);
   }
 
-  @override
-  void dispose() {
-    _confettiCtrl.dispose();
-    _pulseCtrl.dispose();
-    super.dispose();
-  }
-
-  void _cycleTheme(DataProvider data) {
-    String current = data.user['theme_mode'] ?? 'system';
-    String next = 'system';
-    
-    if (current == 'system') {
-      next = 'light';
-    } else if (current == 'light') {
-      next = 'dark';
-    } else if (current == 'dark') {
-      next = 'system';
-    }
-
-    data.updateUserSettings({'theme_mode': next});
-  }
-
-  IconData _getThemeIcon(String? mode) {
-    switch (mode) {
-      case 'light': return Icons.wb_sunny_rounded;
-      case 'dark': return Icons.nightlight_round_rounded;
-      default: return Icons.brightness_auto_rounded;
-    }
-  }
-
-  String _getThemeText(String? mode) {
-    switch (mode) {
-      case 'light': return "Licht";
-      case 'dark': return "Donker";
-      default: return "Systeem";
-    }
-  }
-  
   @override
   Widget build(BuildContext context) {
-    final data = context.watch<DataProvider>();
-    final user = data.user;
-    
-    String carTitle = data.cars.length > 1 ? "Voertuigen" : "Voertuig";
+    final provider = context.watch<DataProvider>();
+    final settings = provider.settings;
+    final Color appColor = provider.themeColor;
+
+    if (settings == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
-      body: Stack(
-        alignment: Alignment.topCenter,
-        children: [
-          SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              children: [
-                const SizedBox(height: 20), 
-
-                // --- SECTIE 1: PERSONALISATIE ---
-                _buildSectionHeader("Personalisatie"),
-                _buildSettingsCard(context, [
-                  _buildListTile(
-                    icon: Icons.person_outline,
-                    title: "Naam", 
-                    subtitle: user['first_name'] ?? "Bestuurder",
-                    onTap: () => _nameDlg(context, data),
-                  ),
-                  _buildDivider(),
-                  
-                  // Begroeting Toggle
-                  _buildListTile(
-                    icon: Icons.waving_hand_outlined,
-                    title: "Begroeting",
-                    subtitle: (user['use_greeting'] ?? 1) == 1 ? "Staat aan" : "Staat uit",
-                    trailing: _buildVisibilityIcon(
-                      isOn: (user['use_greeting'] ?? 1) == 1,
-                      onTap: () => data.updateUserSettings({'use_greeting': (user['use_greeting'] ?? 1) == 1 ? 0 : 1}),
+      appBar: AppBar(title: const Text('Instellingen')),
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                // 1. GEBRUIKER
+                _buildAccordionCard(
+                  title: 'Gebruikersprofiel',
+                  icon: Icons.person_outline,
+                  appColor: appColor,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: TextField(
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Jouw Naam',
+                          filled: true,
+                          fillColor: Theme.of(context).scaffoldBackgroundColor, // Subtiel contrast
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        ),
+                        onChanged: (v) => provider.updateSettings(settings.copyWith(firstName: v)),
+                      ),
                     ),
-                  ),
-                  _buildDivider(),
-
-                  // Quotes Toggle
-                  _buildListTile(
-                    icon: Icons.format_quote_outlined,
-                    title: "Quotes",
-                    subtitle: (user['show_quotes'] ?? 1) == 1 ? "Staat aan" : "Staat uit",
-                    trailing: _buildVisibilityIcon(
-                      isOn: (user['show_quotes'] ?? 1) == 1,
-                      onTap: () => data.updateUserSettings({'show_quotes': (user['show_quotes'] ?? 1) == 1 ? 0 : 1}),
+                    SwitchListTile(
+                      title: const Text('Begroeting tonen'), 
+                      value: settings.useGreeting, 
+                      activeColor: appColor, 
+                      onChanged: (v) => provider.updateSettings(settings.copyWith(useGreeting: v))
                     ),
-                  ),
-                  _buildDivider(),
-
-                  // Thema
-                  _buildListTile(
-                    icon: Icons.palette_outlined,
-                    title: "Thema",
-                    subtitle: _getThemeText(user['theme_mode']),
-                    trailing: Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: Icon(_getThemeIcon(user['theme_mode']), color: Colors.blueAccent),
+                    SwitchListTile(
+                      title: const Text('Quotes tonen'), 
+                      value: settings.showQuotes, 
+                      activeColor: appColor, 
+                      onChanged: (v) => provider.updateSettings(settings.copyWith(showQuotes: v))
                     ),
-                    onTap: () => _cycleTheme(data),
-                  ),
-                ]),
-
-                const SizedBox(height: 24),
-
-                // --- SECTIE 2: GARAGE ---
-                _buildSectionHeader("Garage"),
-                _buildSettingsCard(context, [
-                  _buildListTile(
-                    icon: Icons.directions_car_outlined,
-                    title: carTitle, 
-                    subtitle: "Toevoegen, wijzigen en verwijderen",
-                    trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-                    onTap: () => _manageCars(context, data),
-                  ),
-                ]),
-
-                const SizedBox(height: 24),
-
-                // --- SECTIE 3: SYSTEEM ---
-                _buildSectionHeader("Systeem"),
-                _buildSettingsCard(context, [
-                  
-                  // >>> GEHEIME OPTIE <<<
-                  if (data.secretUnlocked) ...[
-                    AnimatedBuilder(
-                      animation: _pulseColor,
-                      builder: (context, child) {
-                        return _buildListTile(
-                          icon: Icons.local_gas_station,
-                          title: "Gratis Tanken Modus",
-                          subtitle: "Schakel 100% korting in",
-                          iconColor: Colors.amber,
-                          textColor: Colors.amber[800],
-                          trailing: IconButton(
-                            icon: const Icon(Icons.power_settings_new),
-                            color: _pulseColor.value, // De pulserende kleur
-                            iconSize: 28,
-                            onPressed: () {
-                               _confettiCtrl.play();
-                               showDialog(
-                                 context: context, 
-                                 builder: (ctx) => AlertDialog(
-                                   title: const Text("Grapje!"), 
-                                   content: const Text("Was het maar zo'n feest.\nMaar dromen mag altijd..."),
-                                   actions: [
-                                     TextButton(
-                                       onPressed: () {
-                                         data.lockSecret();
-                                         Navigator.pop(ctx);
-                                       }, 
-                                       child: const Text("Oké")
-                                     )
-                                   ]
-                                 )
-                               );
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                    _buildDivider(),
                   ],
-                  // >>> EINDE GEHEIME OPTIE <<<
-
-                  _buildListTile(
-                    icon: Icons.upload_file,
-                    title: "Backup maken",
-                    subtitle: "Lokaal of Delen",
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(icon: const Icon(Icons.save, color: Colors.blueAccent), tooltip: "Lokaal opslaan", onPressed: () async { await data.saveLocalBackup(); if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Backup lokaal opgeslagen!"))); } }),
-                        IconButton(icon: const Icon(Icons.share, color: Colors.blueAccent), tooltip: "Delen / Exporteren", onPressed: () => data.exportDataShare())
-                      ],
-                    ),
-                  ),
-                  _buildDivider(),
-                  _buildListTile(
-                    icon: Icons.download_rounded,
-                    title: "Backup herstellen",
-                    subtitle: "Lokaal of Bestand",
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(icon: const Icon(Icons.restore, color: Colors.blueAccent), tooltip: "Lokaal herstellen", onPressed: () async { bool success = await data.importLocalBackup(); if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(success ? "Lokale backup hersteld!" : "Geen lokale backup gevonden."))); } }),
-                        IconButton(icon: const Icon(Icons.folder_open, color: Colors.blueAccent), tooltip: "Bestand kiezen", onPressed: () async { bool success = await data.importDataPicker(); if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(success ? "Backup hersteld!" : "Geen bestand gekozen."))); } })
-                      ],
-                    ),
-                  ),
-                  _buildDivider(),
-                  _buildListTile(
-                    icon: Icons.table_view,
-                    title: "Excel Export",
-                    subtitle: "Opslaan als CSV",
-                    trailing: IconButton(icon: const Icon(Icons.share, color: Colors.blueAccent), tooltip: "Excel/CSV delen", onPressed: () => data.exportCSV()),
-                  ),
-                  _buildDivider(),
-                  _buildListTile(
-                    icon: Icons.delete_forever_outlined,
-                    iconColor: Colors.red,
-                    title: "Alle data wissen",
-                    textColor: Colors.red,
-                    onTap: () => _clearDlg(context, data),
-                  ),
-                ]),
-
-                const SizedBox(height: 40),
-                
-                // VERSIE & TRIGGERS
-                Center(
-                  child: GestureDetector(
-                    onTap: () { 
-                      if (++_clicks >= 7) { 
-                        _clicks = 0; 
-                        widget.onBugEgg(); 
-                      } 
-                    },
-                    onLongPress: () {
-                        bool isDeLorean = data.cars.any((c) => c.licensePlate?.toUpperCase() == 'OUTATIME'); 
-                        widget.onRocketEgg(isDeLorean);
-                    },
-                    child: Text(
-                      "TankBuddy v1.1.09", 
-                      style: TextStyle(color: Colors.grey[400], fontWeight: FontWeight.bold)
-                    )
-                  ),
                 ),
-                const SizedBox(height: 20),
-              ],
+                const SizedBox(height: 16),
+
+                // 2. MIJN GARAGE
+                _buildAccordionCard(
+                  title: 'Mijn Garage',
+                  icon: Icons.garage_outlined,
+                  appColor: appColor,
+                  children: [
+                    ...provider.cars.map((car) => ListTile(
+                      leading: Icon(_getVehicleIcon(car.type), color: appColor),
+                      title: Text(car.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(car.licensePlate),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(icon: const Icon(Icons.edit_outlined, size: 20, color: Colors.orange), onPressed: () => _showCarDialog(context, provider, appColor, car: car)),
+                          IconButton(icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red), onPressed: () => provider.deleteCar(car.id!)),
+                        ],
+                      ),
+                    )),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showCarDialog(context, provider, appColor),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Voertuig toevoegen'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: appColor,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 50),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // 3. WEERGAVE-INSTELLINGEN (MET ICONEN)
+                _buildAccordionCard(
+                  title: 'Weergave-instellingen',
+                  icon: Icons.palette_outlined,
+                  appColor: appColor,
+                  children: [
+                    ListTile(
+                      leading: Icon(Icons.brush, color: appColor), // Icoon toegevoegd
+                      title: const Text('Accentkleur'),
+                      trailing: Container(
+                        width: 24, height: 24,
+                        decoration: BoxDecoration(color: appColor, shape: BoxShape.circle),
+                      ),
+                      onTap: () => _showColorPicker(context, provider, settings),
+                    ),
+                    const Divider(color: Colors.white10),
+                    ListTile(
+                      leading: Icon(Icons.contrast, color: appColor), // Icoon toegevoegd
+                      title: const Text('Thema'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(settings.themeMode, style: const TextStyle(color: Colors.grey)),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                        ],
+                      ),
+                      onTap: () => _showThemePicker(context, provider, settings, appColor),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // 4. OPSLAG & DATA (GEGROEPEERD)
+                _buildAccordionCard(
+                  title: 'Opslag & Data',
+                  icon: Icons.cloud_upload_outlined,
+                  appColor: appColor,
+                  children: [
+                    // Groep 1: Rapportage
+                    _sectionHeader('Rapportage'),
+                    _actionTile('PDF Rapport', Icons.picture_as_pdf, () => DataService.exportToPDF(provider.selectedCar!, provider.entries)),
+                    _actionTile('Excel (.xlsx)', Icons.table_chart, () => DataService.shareAsExcel(provider.entries)),
+                    
+                    const Divider(color: Colors.white10, height: 24),
+                    
+                    // Groep 2: Data Beheer
+                    _sectionHeader('Data Beheer'),
+                    _actionTile('Backup Maken (JSON)', Icons.save_alt, () => DataService.saveBackupJSON({'cars': provider.cars.map((c)=>c.toMap()).toList(), 'entries': provider.entries.map((e)=>e.toMap()).toList()})),
+                    _actionTile('Data Importeren', Icons.file_download, () => _handleImport(context, provider), color: Colors.orange),
+                    _actionTile('CSV Export', Icons.description, () => DataService.shareAsCSV(provider.entries)), // Verplaatst naar beheer
+                    
+                    const Divider(color: Colors.white10, height: 24),
+
+                    // Groep 3: Dev
+                    ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: Colors.grey.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.developer_mode, color: Colors.grey, size: 20),
+                      ),
+                      title: const Text('Developer Notities', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      trailing: const Icon(Icons.chevron_right, size: 18),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const DeveloperNotesScreen())),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+              ]),
             ),
           ),
           
-          ConfettiWidget(
-            confettiController: _confettiCtrl,
-            blastDirectionality: BlastDirectionality.explosive, 
-            shouldLoop: false, 
-            colors: const [Colors.green, Colors.blue, Colors.pink, Colors.orange, Colors.purple],
-            createParticlePath: drawStar, 
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 24, top: 24),
+                child: Text(
+                  'TankBuddy $_version',
+                  style: TextStyle(color: Colors.grey.withOpacity(0.5), fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Path drawStar(Size size) {
-    double degToRad(double deg) => deg * (pi / 180.0);
-    const numberOfPoints = 5;
-    final halfWidth = size.width / 2;
-    final externalRadius = halfWidth;
-    final internalRadius = halfWidth / 2.5;
-    final degreesPerStep = degToRad(360 / numberOfPoints);
-    final halfDegreesPerStep = degreesPerStep / 2;
-    final path = Path();
-    final fullAngle = degToRad(360);
-    path.moveTo(size.width, halfWidth);
-    for (double step = 0; step < fullAngle; step += degreesPerStep) {
-      path.lineTo(halfWidth + externalRadius * cos(step), halfWidth + externalRadius * sin(step));
-      path.lineTo(halfWidth + internalRadius * cos(step + halfDegreesPerStep), halfWidth + internalRadius * sin(step + halfDegreesPerStep));
-    }
-    path.close();
-    return path;
-  }
-
-  // --- HELPER WIDGETS ---
-
-  Widget _buildSectionHeader(String title) {
+  // --- WIDGET HELPERS ---
+  
+  Widget _sectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title, 
-        style: const TextStyle(fontSize: 18, color: Colors.blueAccent, fontWeight: FontWeight.w600)
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
     );
   }
 
-  Widget _buildSettingsCard(BuildContext context, List<Widget> children) {
-    // AANGEPAST: Gewoon weer Container, dus geen Material ripple effect.
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10, 
-          )
+  // --- POP-UPS ---
+
+  void _showColorPicker(BuildContext context, DataProvider provider, dynamic settings) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Kies Accentkleur'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 3.0,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: DataProvider.colorOptions.length,
+            itemBuilder: (context, index) {
+              final entry = DataProvider.colorOptions.entries.elementAt(index);
+              final isSelected = settings.accentColor == entry.key;
+              return GestureDetector(
+                onTap: () {
+                  provider.updateSettings(settings.copyWith(accentColor: entry.key));
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardTheme.color,
+                    border: Border.all(
+                      color: isSelected ? entry.value : Colors.grey.withOpacity(0.3),
+                      width: isSelected ? 2 : 1
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Container(width: 16, height: 16, decoration: BoxDecoration(color: entry.value, shape: BoxShape.circle)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(entry.key, style: TextStyle(
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? entry.value : null
+                        ), overflow: TextOverflow.ellipsis),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Sluiten')),
         ],
       ),
-      child: Column(children: children),
     );
   }
 
-  Widget _buildListTile({
-    required IconData icon, 
-    required String title, 
-    String? subtitle, 
-    Widget? trailing, 
-    VoidCallback? onTap,
-    Color iconColor = Colors.blueAccent,
-    Color? textColor,
-  }) {
-    // AANGEPAST: ListTile gewikkeld in Theme om splash onzichtbaar te maken
-    return Theme(
-      data: Theme.of(context).copyWith(
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
-        hoverColor: Colors.transparent,
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-        leading: Icon(icon, color: iconColor, size: 24),
-        title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor)),
-        subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 13, color: Colors.grey)) : null,
-        trailing: trailing,
-        onTap: onTap,
+  void _showThemePicker(BuildContext context, DataProvider provider, dynamic settings, Color appColor) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Kies Thema'),
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildThemeOption('Licht', 'Light', Icons.wb_sunny_outlined, settings, provider, appColor),
+            _buildThemeOption('Donker', 'Dark', Icons.nights_stay_outlined, settings, provider, appColor),
+            _buildThemeOption('Systeem', 'System', Icons.smartphone, settings, provider, appColor),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Sluiten')),
+        ],
       ),
     );
   }
 
-  Widget _buildVisibilityIcon({required bool isOn, required VoidCallback onTap, Color color = Colors.blueAccent}) {
-    return IconButton(
-      icon: Icon(isOn ? Icons.visibility_off : Icons.visibility),
-      color: isOn ? Colors.grey : color,
-      onPressed: onTap,
-      tooltip: isOn ? "Uitzetten" : "Aanzetten",
+  // AANGEPAST: Geen gekleurde achtergrond meer, alleen border + icon color
+  Widget _buildThemeOption(String label, String value, IconData icon, dynamic settings, DataProvider provider, Color appColor) {
+    final isSelected = settings.themeMode == value;
+    return GestureDetector(
+      onTap: () {
+        provider.updateSettings(settings.copyWith(themeMode: value));
+        Navigator.pop(context);
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 60, height: 60,
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color, // Gewoon kaartkleur
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: isSelected ? appColor : Colors.transparent, width: 2), // Alleen rand bij selectie
+              // Geen shadow meer
+            ),
+            child: Icon(icon, color: isSelected ? appColor : Colors.grey, size: 28),
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: TextStyle(
+            fontSize: 12, 
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? appColor : Colors.grey
+          )),
+        ],
+      ),
     );
   }
 
-  Widget _buildDivider() {
-    return Divider(
-      height: 1, 
-      thickness: 0.5, 
-      color: Colors.grey.withValues(alpha: 0.2),
-      indent: 16, 
-      endIndent: 16,
+  // --- HELPERS ---
+
+  IconData _getVehicleIcon(String type) {
+    switch (type) {
+      case 'Motor': return Icons.motorcycle;
+      case 'Vrachtwagen': return Icons.local_shipping;
+      case 'Scooter': return Icons.moped;
+      default: return Icons.directions_car;
+    }
+  }
+
+  void _showCarDialog(BuildContext context, DataProvider provider, Color color, {Car? car}) {
+    final name = TextEditingController(text: car?.name);
+    final plate = TextEditingController(text: car?.licensePlate);
+    final insurance = TextEditingController(text: car?.insurance.toString().replaceAll('.', ',') ?? '0');
+    final tax = TextEditingController(text: car?.roadTax.toString().replaceAll('.', ',') ?? '0');
+    String selectedType = _vehicleTypes.contains(car?.type) ? car!.type : 'Auto';
+    DateTime? apk = car?.apkDate;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Text(car == null ? 'Nieuw Voertuig' : 'Wijzig Voertuig'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedType,
+                  decoration: const InputDecoration(labelText: 'Type Voertuig'),
+                  items: _vehicleTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                  onChanged: (v) => setDialogState(() => selectedType = v!),
+                ),
+                TextField(controller: name, decoration: const InputDecoration(labelText: 'Naam')),
+                TextField(controller: plate, decoration: const InputDecoration(labelText: 'Kenteken')),
+                TextField(controller: insurance, decoration: const InputDecoration(labelText: 'Verzekering p/m'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                TextField(controller: tax, decoration: const InputDecoration(labelText: 'Wegenbelasting'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('APK Datum'),
+                  subtitle: Text(apk == null ? 'Kies datum' : DateFormat('dd-MM-yyyy').format(apk!)),
+                  onTap: () async {
+                    final d = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2100), locale: const Locale('nl', 'NL'));
+                    if (d != null) setDialogState(() => apk = d);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuleer')),
+            ElevatedButton(
+              onPressed: () {
+                final newCar = Car(
+                  id: car?.id, name: name.text, licensePlate: plate.text, type: selectedType,
+                  apkDate: apk, insurance: double.tryParse(insurance.text.replaceAll(',', '.')) ?? 0,
+                  roadTax: double.tryParse(tax.text.replaceAll(',', '.')) ?? 0, roadTaxFreq: 'Maandelijks',
+                );
+                car == null ? provider.addCar(newCar) : provider.updateCar(newCar);
+                Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
+              child: const Text('Opslaan'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  // --- LOGICA ---
-
-  void _nameDlg(BuildContext context, DataProvider data) {
-    final c = TextEditingController(text: data.user['first_name']);
-    showDialog(context: context, builder: (ctx) => AlertDialog(title: const Text("Naam wijzigen"), content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(border: OutlineInputBorder())), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Annuleren")), TextButton(onPressed: () { data.updateUserSettings({'first_name': c.text}); Navigator.pop(ctx); }, child: const Text("Opslaan"))]));
-  }
-  
-  void _manageCars(BuildContext context, DataProvider data) {
-    showModalBottomSheet(context: context, isScrollControlled: true, useSafeArea: true, builder: (ctx) => DraggableScrollableSheet(expand: false, initialChildSize: 0.6, minChildSize: 0.4, maxChildSize: 0.9, builder: (_, scrollCtrl) => Container(padding: const EdgeInsets.all(20), child: Column(children: [const Text("Mijn Garage", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)), const SizedBox(height: 10), const Text("Klik op een voertuig om te wijzigen.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)), const SizedBox(height: 20), Expanded(child: data.cars.isEmpty ? const Center(child: Text("Nog geen voertuigen.")) : ListView.separated(controller: scrollCtrl, itemCount: data.cars.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (context, index) { final car = data.cars[index]; return ListTile(leading: CircleAvatar(backgroundColor: Colors.blueAccent, child: Icon(data.getVehicleIcon(car.type), color: Colors.white, size: 20)), title: Text(car.name, style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text("${car.type.toUpperCase()} - ${car.licensePlate ?? ''}"), onTap: () => _carDlg(context, data, car), trailing: IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => _confirmDeleteCar(context, data, car))); })), const SizedBox(height: 20), SizedBox(width: double.infinity, height: 50, child: ElevatedButton.icon(onPressed: () => _carDlg(context, data, null), icon: const Icon(Icons.add), label: const Text("Nieuw Voertuig Toevoegen"), style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white))) ]))));
-  }
-  
-  void _confirmDeleteCar(BuildContext context, DataProvider data, Car car) {
-    showDialog(context: context, builder: (ctx) => AlertDialog(title: const Text("Voertuig verwijderen?"), content: Text("Weet je zeker dat je '${car.name}' wilt verwijderen?"), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Annuleren")), TextButton(onPressed: () { data.deleteCar(car.id!); Navigator.pop(ctx); }, child: const Text("Verwijderen", style: TextStyle(color: Colors.red)))]));
-  }
-  
-  void _clearDlg(BuildContext context, DataProvider data) {
-    showDialog(context: context, builder: (ctx) => AlertDialog(title: const Text("Alles wissen?"), content: const Text("Dit wist ALLE data."), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Annuleren")), TextButton(onPressed: () { DatabaseHelper.instance.clearAllData(); data.loadData(); Navigator.pop(ctx); }, child: const Text("WIS", style: TextStyle(color: Colors.red)))]));
+  void _handleImport(BuildContext context, DataProvider provider) async {
+    final content = await DataService.pickFile(['json']);
+    if (content != null && context.mounted) {
+      await provider.importJsonBackup(content);
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Import geslaagd!')));
+    }
   }
 
-  void _carDlg(BuildContext context, DataProvider data, Car? car) {
-    final n = TextEditingController(text: car?.name); 
-    final k = TextEditingController(text: car?.licensePlate);
-    final insCtrl = TextEditingController(text: car?.insurance?.toString() ?? "");
-    final taxCtrl = TextEditingController(text: car?.roadTax?.toString() ?? "");
-    String type = car?.type ?? 'auto'; 
-    String taxFreq = car?.roadTaxFreq ?? 'month'; 
-    DateTime? apk = car?.apkDate != null ? DateTime.parse(car!.apkDate!) : null;
-    final dCtrl = TextEditingController(text: apk != null ? DateFormat('dd-MM-yyyy').format(apk) : "");
-    final types = ['auto', 'motor', 'scooter', 'vrachtwagen', 'trekker', 'bus', 'camper'];
-    
-    showDialog(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => AlertDialog(
-      title: Text(car == null ? "Nieuw Voertuig" : "Voertuig Wijzigen"), 
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          DropdownButtonFormField<String>(value: type, decoration: const InputDecoration(labelText: "Soort Voertuig", border: OutlineInputBorder()), items: types.map((t) => DropdownMenuItem(value: t, child: Row(children: [Icon(data.getVehicleIcon(t), color: Colors.grey), const SizedBox(width: 10), Text(t[0].toUpperCase() + t.substring(1))]))).toList(), onChanged: (v) => setS(() => type = v!)), 
-          const SizedBox(height: 16), TextField(controller: n, decoration: const InputDecoration(labelText: "Naam", border: OutlineInputBorder())), 
-          const SizedBox(height: 16), TextField(controller: k, decoration: const InputDecoration(labelText: "Kenteken", border: OutlineInputBorder())), 
-          const SizedBox(height: 16), TextField(controller: insCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: "Verzekering (p/mnd)", border: OutlineInputBorder(), prefixText: "€ ")),
-          const SizedBox(height: 16), Row(children: [Expanded(child: TextField(controller: taxCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: "Wegenbelasting", border: OutlineInputBorder(), prefixText: "€ "))), const SizedBox(width: 8), SizedBox(width: 110, child: DropdownButtonFormField<String>(value: taxFreq, decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 8)), items: const [DropdownMenuItem(value: 'month', child: Text("p/mnd")), DropdownMenuItem(value: 'quarter', child: Text("p/kwrt"))], onChanged: (v) => setS(() => taxFreq = v!)))]),
-          const SizedBox(height: 16), TextField(controller: dCtrl, readOnly: true, decoration: const InputDecoration(labelText: "APK Vervaldatum", border: OutlineInputBorder(), suffixIcon: Icon(Icons.calendar_month, color: Colors.blueAccent)), onTap: () async { final d = await showDatePicker(context: context, initialDate: apk ?? DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2030), locale: const Locale('nl')); if (d != null) { setS(() => apk = d); dCtrl.text = DateFormat('dd-MM-yyyy').format(d); }})
-        ])), 
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Annuleren")), 
-        ElevatedButton(
-          onPressed: () { 
-            if (n.text.isEmpty) { return; } 
-            double? ins = double.tryParse(insCtrl.text.replaceAll(',', '.'));
-            double? tax = double.tryParse(taxCtrl.text.replaceAll(',', '.'));
-            data.updateCar(Car(id: car?.id, name: n.text, licensePlate: k.text, apkDate: apk?.toIso8601String(), type: type, insurance: ins, roadTax: tax, roadTaxFreq: taxFreq)); 
-            Navigator.pop(ctx); 
-          }, 
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white), 
-          child: const Text("Opslaan")
-        )
-      ]
-    )));
+  Widget _buildAccordionCard({required String title, required IconData icon, required Color appColor, required List<Widget> children}) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white10)),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          shape: const Border(), collapsedShape: const Border(),
+          leading: Icon(icon, color: appColor),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          children: children,
+        ),
+      ),
+    );
   }
+
+  Widget _actionTile(String t, IconData i, VoidCallback tap, {Color? color}) => ListTile(leading: Icon(i, color: color ?? Colors.grey), title: Text(t, style: TextStyle(color: color, fontSize: 14)), trailing: const Icon(Icons.chevron_right, size: 18), onTap: tap);
 }
