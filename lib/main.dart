@@ -34,12 +34,10 @@ class _MijnTankAppState extends State<MijnTankApp> {
     final provider = context.watch<DataProvider>();
     final settings = provider.settings;
     final String themeModePref = settings?.themeMode ?? 'System';
-    
-    // DYNAMIC COLOR MAGIC 
     final Color appColor = provider.themeColor;
 
     return MaterialApp(
-      title: 'Mijn Tank App',
+      title: 'TankAppie',
       debugShowCheckedModeBanner: false,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -50,11 +48,11 @@ class _MijnTankAppState extends State<MijnTankApp> {
       locale: const Locale('nl', 'NL'),
       themeMode: _getThemeMode(themeModePref),
       
+      // --- LIGHT THEME ---
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
         scaffoldBackgroundColor: const Color(0xFFF5F7F9),
-        // Hier gebruiken we de dynamische kleur
         colorScheme: ColorScheme.fromSeed(seedColor: appColor, primary: appColor, surface: Colors.white),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFFF5F7F9),
@@ -71,14 +69,25 @@ class _MijnTankAppState extends State<MijnTankApp> {
         ),
       ),
 
+      // --- DARK THEME (NIEUWE KLEUREN) ---
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0A0C0F),
-        colorScheme: ColorScheme.fromSeed(seedColor: appColor, brightness: Brightness.dark, primary: appColor, surface: const Color(0xFF1A1D21)),
+        // NIEUW: Gunmetal achtergrond
+        scaffoldBackgroundColor: const Color(0xFF1B1C24),
+        
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: appColor, 
+          brightness: Brightness.dark, 
+          primary: appColor, 
+          // NIEUW: Kaart kleur als surface
+          surface: const Color(0xFF272934)
+        ),
+
         bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          backgroundColor: const Color(0xFF1A1D21),
-          selectedItemColor: appColor, // Dynamisch
+          // NIEUW: Matcht de kaartkleur voor een rustige navigatiebalk
+          backgroundColor: const Color(0xFF272934),
+          selectedItemColor: appColor,
           unselectedItemColor: Colors.white38,
           selectedLabelStyle: TextStyle(color: appColor, fontWeight: FontWeight.bold, fontSize: 12),
           unselectedLabelStyle: const TextStyle(color: Colors.white38, fontSize: 12),
@@ -86,21 +95,37 @@ class _MijnTankAppState extends State<MijnTankApp> {
           showUnselectedLabels: true,
           type: BottomNavigationBarType.fixed,
         ),
+
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0A0C0F),
+          // Transparant zodat de mooie achtergrondkleur zichtbaar blijft
+          backgroundColor: Colors.transparent,
           elevation: 0,
           centerTitle: false,
           titleSpacing: 24,
+          titleTextStyle: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+          iconTheme: IconThemeData(color: Colors.white),
         ),
+
         cardTheme: CardThemeData(
-          color: const Color(0xFF1A1D21),
+          // NIEUW: De lichtere tint uit je screenshot
+          color: const Color(0xFF272934),
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
-            side: const BorderSide(color: Colors.white10, width: 1),
+            side: BorderSide.none, // Geen rand meer nodig met dit contrast
           ),
         ),
+
+        // NIEUW: Zorgt dat invulvelden mooi 'in' de kaart vallen
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF1B1C24), // De achtergrondkleur, zorgt voor diepte in de kaart
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+          labelStyle: const TextStyle(color: Colors.white70),
+          prefixIconColor: Colors.white70,
+        ),
       ),
+
       home: Scaffold(
         body: PageView(
           controller: _pageController,

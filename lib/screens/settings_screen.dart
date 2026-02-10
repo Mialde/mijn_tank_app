@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../data_provider.dart';
 import '../services/data_service.dart';
 import '../models/car.dart';
+import '../models/fuel_entry.dart';
 import 'developer_notes_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -16,7 +17,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _nameController;
   final List<String> _vehicleTypes = ['Auto', 'Motor', 'Vrachtwagen', 'Scooter', 'Bus', 'Camper', 'Tractor', 'Bestelwagen'];
-  final String _version = "v1.0.4 (Beta)";
+  final String _version = "v1.0.6 (Beta)";
 
   @override
   void initState() {
@@ -53,7 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         decoration: InputDecoration(
                           labelText: 'Jouw Naam',
                           filled: true,
-                          fillColor: Theme.of(context).scaffoldBackgroundColor, // Subtiel contrast
+                          fillColor: Theme.of(context).scaffoldBackgroundColor,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                         ),
@@ -112,14 +113,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // 3. WEERGAVE-INSTELLINGEN (MET ICONEN)
+                // 3. WEERGAVE
                 _buildAccordionCard(
                   title: 'Weergave-instellingen',
                   icon: Icons.palette_outlined,
                   appColor: appColor,
                   children: [
                     ListTile(
-                      leading: Icon(Icons.brush, color: appColor), // Icoon toegevoegd
+                      leading: Icon(Icons.brush, color: appColor),
                       title: const Text('Accentkleur'),
                       trailing: Container(
                         width: 24, height: 24,
@@ -129,7 +130,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const Divider(color: Colors.white10),
                     ListTile(
-                      leading: Icon(Icons.contrast, color: appColor), // Icoon toegevoegd
+                      leading: Icon(Icons.contrast, color: appColor),
                       title: const Text('Thema'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -145,32 +146,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // 4. OPSLAG & DATA (GEGROEPEERD)
+                // 4. OPSLAG & DATA
                 _buildAccordionCard(
                   title: 'Opslag & Data',
                   icon: Icons.cloud_upload_outlined,
                   appColor: appColor,
                   children: [
-                    // Groep 1: Rapportage
-                    _sectionHeader('Rapportage'),
-                    _actionTile('PDF Rapport', Icons.picture_as_pdf, () => DataService.exportToPDF(provider.selectedCar!, provider.entries)),
-                    _actionTile('Excel (.xlsx)', Icons.table_chart, () => DataService.shareAsExcel(provider.entries)),
-                    
-                    const Divider(color: Colors.white10, height: 24),
-                    
-                    // Groep 2: Data Beheer
-                    _sectionHeader('Data Beheer'),
-                    _actionTile('Backup Maken (JSON)', Icons.save_alt, () => DataService.saveBackupJSON({'cars': provider.cars.map((c)=>c.toMap()).toList(), 'entries': provider.entries.map((e)=>e.toMap()).toList()})),
-                    _actionTile('Data Importeren', Icons.file_download, () => _handleImport(context, provider), color: Colors.orange),
-                    _actionTile('CSV Export', Icons.description, () => DataService.shareAsCSV(provider.entries)), // Verplaatst naar beheer
+                    _sectionHeader('Data Management'),
+                    _actionTile('Gegevens Exporteren', Icons.upload_file_outlined, () => _handleExport(context, provider)),
+                    _actionTile('Gegevens Importeren', Icons.download_for_offline_outlined, () => _handleImport(context, provider), color: Colors.orange),
                     
                     const Divider(color: Colors.white10, height: 24),
 
-                    // Groep 3: Dev
+                    _sectionHeader('Gevaarlijke Zone'),
+                    _actionTile('Gegevens wissen', Icons.delete_forever, () => _showResetDialog(context, provider), color: Colors.red),
+
+                    const Divider(color: Colors.white10, height: 24),
+
                     ListTile(
                       leading: Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: Colors.grey.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                        decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
                         child: const Icon(Icons.developer_mode, color: Colors.grey, size: 20),
                       ),
                       title: const Text('Developer Notities', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -191,8 +187,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 24, top: 24),
                 child: Text(
-                  'TankBuddy $_version',
-                  style: TextStyle(color: Colors.grey.withOpacity(0.5), fontSize: 12, fontWeight: FontWeight.bold),
+                  'TankAppie $_version',
+                  style: TextStyle(color: Colors.grey.withValues(alpha: 0.5), fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -202,8 +198,261 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // --- WIDGET HELPERS ---
-  
+  // --- EXPORT MENU ---
+
+  void _handleExport(BuildContext context, DataProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 16),
+          const Text('Kies export formaat', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 16),
+          _exportOptionTile(context, 'PDF Rapport', Icons.picture_as_pdf, () => _showActionChoice(context, 'PDF Rapport', 
+            onShare: () => DataService.exportToPDF(provider.selectedCar!, provider.entries),
+            onSave: () => DataService.savePDFLocally(provider.selectedCar!, provider.entries)
+          )),
+          _exportOptionTile(context, 'Excel Lijst (.xlsx)', Icons.table_chart, () => _showActionChoice(context, 'Excel Lijst', 
+            onShare: () => DataService.shareAsExcel(provider.entries),
+            onSave: () => DataService.saveExcelLocally(provider.entries)
+          )),
+          _exportOptionTile(context, 'CSV Bestand', Icons.description, () => _showActionChoice(context, 'CSV Bestand', 
+            onShare: () => DataService.shareAsCSV(provider.entries),
+            onSave: () => DataService.saveCSVLocally(provider.entries)
+          )),
+          _exportOptionTile(context, 'Volledige Backup (JSON)', Icons.settings_backup_restore, () => _showActionChoice(context, 'JSON Backup', 
+            onShare: () => DataService.shareBackupJSON({'cars': provider.cars.map((c)=>c.toMap()).toList(), 'entries': provider.entries.map((e)=>e.toMap()).toList()}),
+            onSave: () => DataService.saveBackupJSON({'cars': provider.cars.map((c)=>c.toMap()).toList(), 'entries': provider.entries.map((e)=>e.toMap()).toList()})
+          )),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  void _showActionChoice(BuildContext context, String title, {required VoidCallback onShare, required VoidCallback onSave}) {
+    Navigator.pop(context);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text(title),
+        content: const Text('Wat wil je doen met het bestand?'),
+        actions: [
+          TextButton.icon(
+            onPressed: () { Navigator.pop(context); onShare(); },
+            icon: const Icon(Icons.share), label: const Text('Delen')
+          ),
+          ElevatedButton.icon(
+            onPressed: () { Navigator.pop(context); onSave(); },
+            icon: const Icon(Icons.save_alt), label: const Text('Opslaan')
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- IMPORT LOGICA ---
+
+  void _handleImport(BuildContext context, DataProvider provider) async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 16),
+          const Text('Kies bron voor import', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const Icon(Icons.backup_outlined),
+            title: const Text('TankAppie Backup (JSON)'),
+            onTap: () async {
+              Navigator.pop(context);
+              final content = await DataService.pickFile(['json']);
+              if (content != null) provider.importJsonBackup(content);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.table_view_outlined),
+            title: const Text('CSV Lijst (Slimme Import)'),
+            onTap: () async {
+              Navigator.pop(context);
+              final rows = await DataService.pickAndParseCSV();
+              if (rows != null && context.mounted) _showMappingDialog(context, rows, provider);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.grid_on_outlined),
+            title: const Text('Excel Lijst (.xlsx)'),
+            onTap: () async {
+              Navigator.pop(context);
+              final rows = await DataService.pickAndParseExcel();
+              if (rows != null && context.mounted) _showMappingDialog(context, rows, provider);
+            },
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  // --- MAPPING LOGICA ---
+
+  void _showMappingDialog(BuildContext context, List<List<dynamic>> rows, DataProvider provider) {
+    if (rows.isEmpty) return;
+    List<dynamic> sampleRow = rows[0];
+    Map<int, String?> mapping = {}; 
+    final List<String> options = ['Datum', 'KM-stand', 'Liters', 'Totaal Bedrag', 'Negeren'];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: const Text('Kolommen koppelen'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Wijs per kolom aan wat de gegevens betekenen.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: sampleRow.length,
+                    itemBuilder: (context, index) {
+                      String examples = rows.take(3).map((r) => r.length > index ? r[index].toString() : '').join('\n');
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Voorbeelden uit bestand:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                            Text(examples, style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic)),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              initialValue: mapping[index],
+                              decoration: const InputDecoration(isDense: true, border: InputBorder.none, hintText: 'Kies type...'),
+                              items: options.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13)))).toList(),
+                              onChanged: (v) => setDialogState(() => mapping[index] = v),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuleer')),
+            ElevatedButton(
+              onPressed: mapping.values.contains('Datum') && mapping.values.contains('Liters') 
+                ? () {
+                    _processMappedImport(context, rows, mapping, provider);
+                    Navigator.pop(context);
+                  }
+                : null,
+              child: const Text('Importeren'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _processMappedImport(BuildContext context, List<List<dynamic>> rows, Map<int, String?> mapping, DataProvider provider) async {
+    int count = 0;
+    int errorCount = 0;
+    for (var row in rows) {
+      try {
+        int dateIdx = mapping.keys.firstWhere((k) => mapping[k] == 'Datum', orElse: () => -1);
+        int odoIdx = mapping.keys.firstWhere((k) => mapping[k] == 'KM-stand', orElse: () => -1);
+        int literIdx = mapping.keys.firstWhere((k) => mapping[k] == 'Liters', orElse: () => -1);
+        int priceIdx = mapping.keys.firstWhere((k) => mapping[k] == 'Totaal Bedrag', orElse: () => -1);
+        if (dateIdx == -1 || literIdx == -1) continue;
+        String rawDate = row[dateIdx].toString();
+        DateTime parsedDate;
+        try {
+          parsedDate = DateTime.parse(rawDate);
+        } catch (_) {
+          parsedDate = DateFormat('dd-MM-yyyy').parse(rawDate.replaceAll('/', '-'));
+        }
+        await provider.addFuelEntry(FuelEntry(
+          carId: provider.selectedCar!.id!,
+          date: parsedDate,
+          odometer: double.tryParse(row[odoIdx].toString().replaceAll(',', '.')) ?? 0,
+          liters: double.tryParse(row[literIdx].toString().replaceAll(',', '.')) ?? 0,
+          priceTotal: double.tryParse(row[priceIdx].toString().replaceAll(',', '.')) ?? 0,
+          pricePerLiter: 0,
+        ));
+        count++;
+      } catch (e) {
+        errorCount++;
+      }
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Succes: $count geïmporteerd. Fouten: $errorCount.')));
+    }
+  }
+
+  // --- HELPERS ---
+
+  void _showResetDialog(BuildContext context, DataProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Wat wil je wissen?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.history, color: Colors.orange),
+              title: const Text('Alleen historie'),
+              subtitle: const Text('Wist alle tankbeurten van het huidige voertuig.'),
+              onTap: () { Navigator.pop(context); provider.clearAllEntries(); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.warning_amber_rounded, color: Colors.red),
+              title: const Text('Alles wissen'),
+              subtitle: const Text('Reset de app volledig (fabrieksinstellingen).'),
+              onTap: () { Navigator.pop(context); _confirmFactoryReset(context, provider); },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmFactoryReset(BuildContext context, DataProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Weet je het zeker?'),
+        content: const Text('Dit kan niet ongedaan worden gemaakt.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuleer')),
+          TextButton(onPressed: () { Navigator.pop(context); provider.factoryReset(); }, 
+            child: const Text('JA, WIS ALLES', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _sectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -211,122 +460,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // --- POP-UPS ---
-
-  void _showColorPicker(BuildContext context, DataProvider provider, dynamic settings) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Kies Accentkleur'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 3.0,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: DataProvider.colorOptions.length,
-            itemBuilder: (context, index) {
-              final entry = DataProvider.colorOptions.entries.elementAt(index);
-              final isSelected = settings.accentColor == entry.key;
-              return GestureDetector(
-                onTap: () {
-                  provider.updateSettings(settings.copyWith(accentColor: entry.key));
-                  Navigator.pop(context);
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardTheme.color,
-                    border: Border.all(
-                      color: isSelected ? entry.value : Colors.grey.withOpacity(0.3),
-                      width: isSelected ? 2 : 1
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      Container(width: 16, height: 16, decoration: BoxDecoration(color: entry.value, shape: BoxShape.circle)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(entry.key, style: TextStyle(
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          color: isSelected ? entry.value : null
-                        ), overflow: TextOverflow.ellipsis),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
+  Widget _buildAccordionCard({required String title, required IconData icon, required Color appColor, required List<Widget> children}) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white10)),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          shape: const Border(), collapsedShape: const Border(),
+          leading: Icon(icon, color: appColor),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          children: children,
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Sluiten')),
-        ],
       ),
     );
   }
 
-  void _showThemePicker(BuildContext context, DataProvider provider, dynamic settings, Color appColor) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Kies Thema'),
-        content: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _buildThemeOption('Licht', 'Light', Icons.wb_sunny_outlined, settings, provider, appColor),
-            _buildThemeOption('Donker', 'Dark', Icons.nights_stay_outlined, settings, provider, appColor),
-            _buildThemeOption('Systeem', 'System', Icons.smartphone, settings, provider, appColor),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Sluiten')),
-        ],
-      ),
+  Widget _actionTile(String t, IconData i, VoidCallback tap, {Color? color}) => ListTile(leading: Icon(i, color: color ?? Colors.grey), title: Text(t, style: TextStyle(color: color, fontSize: 14)), trailing: const Icon(Icons.chevron_right, size: 18), onTap: tap);
+
+  Widget _exportOptionTile(BuildContext context, String title, IconData icon, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: Theme.of(context).primaryColor),
+      title: Text(title),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
     );
   }
-
-  // AANGEPAST: Geen gekleurde achtergrond meer, alleen border + icon color
-  Widget _buildThemeOption(String label, String value, IconData icon, dynamic settings, DataProvider provider, Color appColor) {
-    final isSelected = settings.themeMode == value;
-    return GestureDetector(
-      onTap: () {
-        provider.updateSettings(settings.copyWith(themeMode: value));
-        Navigator.pop(context);
-      },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 60, height: 60,
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardTheme.color, // Gewoon kaartkleur
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: isSelected ? appColor : Colors.transparent, width: 2), // Alleen rand bij selectie
-              // Geen shadow meer
-            ),
-            child: Icon(icon, color: isSelected ? appColor : Colors.grey, size: 28),
-          ),
-          const SizedBox(height: 8),
-          Text(label, style: TextStyle(
-            fontSize: 12, 
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected ? appColor : Colors.grey
-          )),
-        ],
-      ),
-    );
-  }
-
-  // --- HELPERS ---
 
   IconData _getVehicleIcon(String type) {
     switch (type) {
@@ -356,7 +515,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: selectedType,
+                  initialValue: selectedType, 
                   decoration: const InputDecoration(labelText: 'Type Voertuig'),
                   items: _vehicleTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                   onChanged: (v) => setDialogState(() => selectedType = v!),
@@ -398,29 +557,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _handleImport(BuildContext context, DataProvider provider) async {
-    final content = await DataService.pickFile(['json']);
-    if (content != null && context.mounted) {
-      await provider.importJsonBackup(content);
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Import geslaagd!')));
-    }
-  }
-
-  Widget _buildAccordionCard({required String title, required IconData icon, required Color appColor, required List<Widget> children}) {
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white10)),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          shape: const Border(), collapsedShape: const Border(),
-          leading: Icon(icon, color: appColor),
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          children: children,
+  void _showColorPicker(BuildContext context, DataProvider provider, dynamic settings) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Kies Accentkleur'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, childAspectRatio: 3.0, crossAxisSpacing: 12, mainAxisSpacing: 12,
+            ),
+            itemCount: DataProvider.colorOptions.length,
+            itemBuilder: (context, index) {
+              final entry = DataProvider.colorOptions.entries.elementAt(index);
+              final isSelected = settings.accentColor == entry.key;
+              return GestureDetector(
+                onTap: () { provider.updateSettings(settings.copyWith(accentColor: entry.key)); Navigator.pop(context); },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardTheme.color,
+                    border: Border.all(color: isSelected ? entry.value : Colors.grey.withValues(alpha: 0.3), width: isSelected ? 2 : 1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Container(width: 16, height: 16, decoration: BoxDecoration(color: entry.value, shape: BoxShape.circle)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(entry.key, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? entry.value : null), overflow: TextOverflow.ellipsis)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Sluiten'))],
       ),
     );
   }
 
-  Widget _actionTile(String t, IconData i, VoidCallback tap, {Color? color}) => ListTile(leading: Icon(i, color: color ?? Colors.grey), title: Text(t, style: TextStyle(color: color, fontSize: 14)), trailing: const Icon(Icons.chevron_right, size: 18), onTap: tap);
+  void _showThemePicker(BuildContext context, DataProvider provider, dynamic settings, Color appColor) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Kies Thema'),
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildThemeOption('Licht', 'Light', Icons.wb_sunny_outlined, settings, provider, appColor),
+            _buildThemeOption('Donker', 'Dark', Icons.nights_stay_outlined, settings, provider, appColor),
+            _buildThemeOption('Systeem', 'System', Icons.smartphone, settings, provider, appColor),
+          ],
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Sluiten'))],
+      ),
+    );
+  }
+
+  Widget _buildThemeOption(String label, String value, IconData icon, dynamic settings, DataProvider provider, Color appColor) {
+    final isSelected = settings.themeMode == value;
+    return GestureDetector(
+      onTap: () { provider.updateSettings(settings.copyWith(themeMode: value)); Navigator.pop(context); },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 60, height: 60,
+            decoration: BoxDecoration(color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(16), border: Border.all(color: isSelected ? appColor : Colors.transparent, width: 2)),
+            child: Icon(icon, color: isSelected ? appColor : Colors.grey, size: 28),
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? appColor : Colors.grey)),
+        ],
+      ),
+    );
+  }
 }
