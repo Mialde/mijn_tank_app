@@ -48,7 +48,6 @@ class _MijnTankAppState extends State<MijnTankApp> {
       locale: const Locale('nl', 'NL'),
       themeMode: _getThemeMode(themeModePref),
       
-      // --- LIGHT THEME ---
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
@@ -69,59 +68,36 @@ class _MijnTankAppState extends State<MijnTankApp> {
         ),
       ),
 
-      // --- DARK THEME (NIEUWE KLEUREN) ---
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        // NIEUW: Gunmetal achtergrond
         scaffoldBackgroundColor: const Color(0xFF1B1C24),
-        
         colorScheme: ColorScheme.fromSeed(
           seedColor: appColor, 
           brightness: Brightness.dark, 
           primary: appColor, 
-          // NIEUW: Kaart kleur als surface
           surface: const Color(0xFF272934)
         ),
-
         bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          // NIEUW: Matcht de kaartkleur voor een rustige navigatiebalk
           backgroundColor: const Color(0xFF272934),
           selectedItemColor: appColor,
           unselectedItemColor: Colors.white38,
-          selectedLabelStyle: TextStyle(color: appColor, fontWeight: FontWeight.bold, fontSize: 12),
-          unselectedLabelStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-          selectedIconTheme: IconThemeData(color: appColor, size: 28),
-          showUnselectedLabels: true,
           type: BottomNavigationBarType.fixed,
         ),
-
         appBarTheme: const AppBarTheme(
-          // Transparant zodat de mooie achtergrondkleur zichtbaar blijft
           backgroundColor: Colors.transparent,
           elevation: 0,
-          centerTitle: false,
-          titleSpacing: 24,
           titleTextStyle: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
-          iconTheme: IconThemeData(color: Colors.white),
         ),
-
         cardTheme: CardThemeData(
-          // NIEUW: De lichtere tint uit je screenshot
           color: const Color(0xFF272934),
           elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-            side: BorderSide.none, // Geen rand meer nodig met dit contrast
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
-
-        // NIEUW: Zorgt dat invulvelden mooi 'in' de kaart vallen
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFF1B1C24), // De achtergrondkleur, zorgt voor diepte in de kaart
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-          labelStyle: const TextStyle(color: Colors.white70),
+        inputDecorationTheme: const InputDecorationTheme(
+          filled: false,
+          border: InputBorder.none,
+          labelStyle: TextStyle(color: Colors.white70),
           prefixIconColor: Colors.white70,
         ),
       ),
