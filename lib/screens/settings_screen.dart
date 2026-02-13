@@ -5,6 +5,7 @@ import '../data_provider.dart';
 import '../services/data_service.dart';
 import '../models/car.dart';
 import '../models/fuel_entry.dart';
+import '../models/maintenance_entry.dart';
 import 'developer_notes_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -34,7 +35,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (settings == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Instellingen')),
+      appBar: AppBar(
+        title: const Text('Instellingen'),
+        centerTitle: false,
+        titleSpacing: 24, // Exact dezelfde linkerlijn als de kaarten
+      ),
       body: CustomScrollView(
         slivers: [
           SliverPadding(
@@ -61,17 +66,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onChanged: (v) => provider.updateSettings(settings.copyWith(firstName: v)),
                       ),
                     ),
-                    SwitchListTile(
-                      title: const Text('Begroeting tonen'), 
-                      value: settings.useGreeting, 
-                      activeColor: appColor, 
-                      onChanged: (v) => provider.updateSettings(settings.copyWith(useGreeting: v))
+                    ListTile(
+                      minTileHeight: 72,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                      title: const Text('Begroeting tonen'),
+                      trailing: Switch(
+                        value: settings.useGreeting,
+                        activeColor: appColor,
+                        onChanged: (v) => provider.updateSettings(settings.copyWith(useGreeting: v)),
+                      ),
+                      onTap: () => provider.updateSettings(settings.copyWith(useGreeting: !settings.useGreeting)),
                     ),
-                    SwitchListTile(
-                      title: const Text('Quotes tonen'), 
-                      value: settings.showQuotes, 
-                      activeColor: appColor, 
-                      onChanged: (v) => provider.updateSettings(settings.copyWith(showQuotes: v))
+                    ListTile(
+                      minTileHeight: 72,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                      title: const Text('Quotes tonen'),
+                      trailing: Switch(
+                        value: settings.showQuotes,
+                        activeColor: appColor,
+                        onChanged: (v) => provider.updateSettings(settings.copyWith(showQuotes: v)),
+                      ),
+                      onTap: () => provider.updateSettings(settings.copyWith(showQuotes: !settings.showQuotes)),
                     ),
                   ],
                 ),
@@ -84,6 +99,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   appColor: appColor,
                   children: [
                     ...provider.cars.map((car) => ListTile(
+                      minTileHeight: 72,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                       leading: Icon(_getVehicleIcon(car.type), color: appColor),
                       title: Text(car.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text(car.licensePlate),
@@ -120,6 +137,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   appColor: appColor,
                   children: [
                     ListTile(
+                      minTileHeight: 72,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                       leading: Icon(Icons.brush, color: appColor),
                       title: const Text('Accentkleur'),
                       trailing: Container(
@@ -130,6 +149,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const Divider(color: Colors.white10),
                     ListTile(
+                      minTileHeight: 72,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                       leading: Icon(Icons.contrast, color: appColor),
                       title: const Text('Thema'),
                       trailing: Row(
@@ -164,6 +185,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const Divider(color: Colors.white10, height: 24),
 
                     ListTile(
+                      minTileHeight: 72,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                       leading: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
@@ -211,20 +234,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Text('Kies export formaat', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 16),
           _exportOptionTile(context, 'PDF Rapport', Icons.picture_as_pdf, () => _showActionChoice(context, 'PDF Rapport', 
-            onShare: () => DataService.exportToPDF(provider.selectedCar!, provider.entries),
-            onSave: () => DataService.savePDFLocally(provider.selectedCar!, provider.entries)
+            onShare: () => DataService.exportToPDF(provider.cars, provider.entries, provider.maintenanceEntries),
+            onSave: () => DataService.savePDFLocally(provider.cars, provider.entries, provider.maintenanceEntries)
           )),
           _exportOptionTile(context, 'Excel Lijst (.xlsx)', Icons.table_chart, () => _showActionChoice(context, 'Excel Lijst', 
-            onShare: () => DataService.shareAsExcel(provider.entries),
-            onSave: () => DataService.saveExcelLocally(provider.entries)
+            onShare: () => DataService.shareAsExcel(provider.cars, provider.entries, provider.maintenanceEntries),
+            onSave: () => DataService.saveExcelLocally(provider.cars, provider.entries, provider.maintenanceEntries)
           )),
           _exportOptionTile(context, 'CSV Bestand', Icons.description, () => _showActionChoice(context, 'CSV Bestand', 
-            onShare: () => DataService.shareAsCSV(provider.entries),
-            onSave: () => DataService.saveCSVLocally(provider.entries)
+            onShare: () => DataService.shareAsCSV(provider.cars, provider.entries, provider.maintenanceEntries),
+            onSave: () => DataService.saveCSVLocally(provider.cars, provider.entries, provider.maintenanceEntries)
           )),
           _exportOptionTile(context, 'Volledige Backup (JSON)', Icons.settings_backup_restore, () => _showActionChoice(context, 'JSON Backup', 
-            onShare: () => DataService.shareBackupJSON({'cars': provider.cars.map((c)=>c.toMap()).toList(), 'entries': provider.entries.map((e)=>e.toMap()).toList()}),
-            onSave: () => DataService.saveBackupJSON({'cars': provider.cars.map((c)=>c.toMap()).toList(), 'entries': provider.entries.map((e)=>e.toMap()).toList()})
+            onShare: () => DataService.shareBackupJSON({
+              'cars': provider.cars.map((c)=>c.toMap()).toList(), 
+              'entries': provider.entries.map((e)=>e.toMap()).toList(),
+              'maintenance_entries': provider.maintenanceEntries.map((e)=>e.toMap()).toList()
+            }),
+            onSave: () => DataService.saveBackupJSON({
+              'cars': provider.cars.map((c)=>c.toMap()).toList(), 
+              'entries': provider.entries.map((e)=>e.toMap()).toList(),
+              'maintenance_entries': provider.maintenanceEntries.map((e)=>e.toMap()).toList()
+            })
           )),
           const SizedBox(height: 24),
         ],
@@ -267,6 +298,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Text('Kies bron voor import', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 16),
           ListTile(
+            minTileHeight: 72,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
             leading: const Icon(Icons.backup_outlined),
             title: const Text('TankAppie Backup (JSON)'),
             onTap: () async {
@@ -276,6 +309,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           ListTile(
+            minTileHeight: 72,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
             leading: const Icon(Icons.table_view_outlined),
             title: const Text('CSV Lijst (Slimme Import)'),
             onTap: () async {
@@ -285,6 +320,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           ListTile(
+            minTileHeight: 72,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
             leading: const Icon(Icons.grid_on_outlined),
             title: const Text('Excel Lijst (.xlsx)'),
             onTap: () async {
@@ -420,15 +457,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              minTileHeight: 72,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
               leading: const Icon(Icons.history, color: Colors.orange),
               title: const Text('Alleen historie'),
               subtitle: const Text('Wist alle tankbeurten van het huidige voertuig.'),
               onTap: () { Navigator.pop(context); provider.clearAllEntries(); },
             ),
             ListTile(
+              minTileHeight: 72,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
               leading: const Icon(Icons.warning_amber_rounded, color: Colors.red),
               title: const Text('Alles wissen'),
-              subtitle: const Text('Reset de app volledig (fabrieksinstellingen).'),
+              subtitle: const Text('Reset de app volledig.'),
               onTap: () { Navigator.pop(context); _confirmFactoryReset(context, provider); },
             ),
           ],
@@ -467,6 +508,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          minTileHeight: 72, // Vaste hoogte van de cel toegevoegd
+          tilePadding: const EdgeInsets.symmetric(horizontal: 20), // Exact dezelfde padding
           shape: const Border(), collapsedShape: const Border(),
           leading: Icon(icon, color: appColor),
           title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -476,10 +519,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _actionTile(String t, IconData i, VoidCallback tap, {Color? color}) => ListTile(leading: Icon(i, color: color ?? Colors.grey), title: Text(t, style: TextStyle(color: color, fontSize: 14)), trailing: const Icon(Icons.chevron_right, size: 18), onTap: tap);
+  Widget _actionTile(String t, IconData i, VoidCallback tap, {Color? color}) => ListTile(
+    minTileHeight: 72,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+    leading: Icon(i, color: color ?? Colors.grey), 
+    title: Text(t, style: TextStyle(color: color, fontSize: 14)), 
+    trailing: const Icon(Icons.chevron_right, size: 18), 
+    onTap: tap
+  );
 
   Widget _exportOptionTile(BuildContext context, String title, IconData icon, VoidCallback onTap) {
     return ListTile(
+      minTileHeight: 72,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
       leading: Icon(icon, color: Theme.of(context).primaryColor),
       title: Text(title),
       trailing: const Icon(Icons.chevron_right),
@@ -525,6 +577,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 TextField(controller: insurance, decoration: const InputDecoration(labelText: 'Verzekering p/m'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                 TextField(controller: tax, decoration: const InputDecoration(labelText: 'Wegenbelasting'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                 ListTile(
+                  minTileHeight: 72,
                   contentPadding: EdgeInsets.zero,
                   title: const Text('APK Datum'),
                   subtitle: Text(apk == null ? 'Kies datum' : DateFormat('dd-MM-yyyy').format(apk!)),

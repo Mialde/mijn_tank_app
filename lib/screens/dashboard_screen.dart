@@ -7,7 +7,6 @@ import '../models/time_period.dart';
 import '../models/stat_item.dart';
 import '../widgets/apk_warning_banner.dart';
 import 'history_screen.dart';
-// Import 'maintenance_screen.dart' is verwijderd omdat de knop hier weg is
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -37,12 +36,22 @@ class DashboardScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(selectedCar.name),
+        centerTitle: false,
+        titleSpacing: 24,
         elevation: 0,
         backgroundColor: Colors.transparent,
         actions: [
-          IconButton(icon: const Icon(Icons.history, size: 24), onPressed: () => _showHistoryModal(context)),
+          // Geschiedenis: Neutraal thema
+          IconButton(
+            icon: const Icon(Icons.history, size: 24), 
+            onPressed: () => _showHistoryModal(context)
+          ),
+          // Autoselectie: Accentkleur
           if (provider.cars.length > 1)
-            IconButton(icon: Icon(Icons.directions_car, color: appColor), onPressed: () => _showVehicleSelector(context, provider)),
+            IconButton(
+              icon: Icon(Icons.directions_car, color: appColor, size: 24), 
+              onPressed: () => _showVehicleSelector(context, provider)
+            ),
           const SizedBox(width: 16),
         ],
       ),
@@ -56,7 +65,13 @@ class DashboardScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Theme.of(context).cardTheme.color,
                   borderRadius: BorderRadius.circular(24),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05), blurRadius: 20, offset: const Offset(0, 5))],
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05), 
+                      blurRadius: 20, 
+                      offset: const Offset(0, 5)
+                    )
+                  ],
                 ),
                 padding: const EdgeInsets.all(24),
                 child: Column(
@@ -65,7 +80,14 @@ class DashboardScreen extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text("KOSTENOVERZICHT", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Theme.of(context).hintColor, letterSpacing: 1.0)),
+                        Text("KOSTENOVERZICHT", 
+                          style: TextStyle(
+                            fontSize: 12, 
+                            fontWeight: FontWeight.bold, 
+                            color: Theme.of(context).hintColor, 
+                            letterSpacing: 1.0
+                          )
+                        ),
                         _buildCompactSelector(context, provider, appColor),
                       ],
                     ),
@@ -144,28 +166,54 @@ class DashboardScreen extends StatelessWidget {
   }
 
   Widget _buildCompactSelector(BuildContext context, DataProvider provider, Color appColor) {
-    final Map<TimePeriod, String> labels = {TimePeriod.oneMonth: '1M', TimePeriod.sixMonths: '6M', TimePeriod.oneYear: '1J', TimePeriod.allTime: 'All'};
-    return Row(children: TimePeriod.values.map((p) => GestureDetector(
-      onTap: () => provider.setTimePeriod(p),
-      child: Container(
-        margin: const EdgeInsets.only(left: 8), 
-        width: 32, height: 32, 
-        alignment: Alignment.center, 
-        decoration: BoxDecoration(
-          color: provider.selectedPeriod == p ? appColor : Colors.transparent, 
-          shape: BoxShape.circle, 
-          border: provider.selectedPeriod == p ? null : Border.all(color: Theme.of(context).hintColor.withValues(alpha: 0.3))
-        ), 
-        child: Text(labels[p]!, style: TextStyle(color: provider.selectedPeriod == p ? Colors.white : Colors.grey, fontSize: 10, fontWeight: FontWeight.bold))),
-    )).toList());
+    final Map<TimePeriod, String> labels = {
+      TimePeriod.oneMonth: '1M', 
+      TimePeriod.sixMonths: '6M', 
+      TimePeriod.oneYear: '1J', 
+      TimePeriod.allTime: 'All'
+    };
+    return Row(
+      children: TimePeriod.values.map((p) => GestureDetector(
+        onTap: () => provider.setTimePeriod(p),
+        child: Container(
+          margin: const EdgeInsets.only(left: 8), 
+          width: 32, height: 32, 
+          alignment: Alignment.center, 
+          decoration: BoxDecoration(
+            color: provider.selectedPeriod == p ? appColor : Colors.transparent, 
+            shape: BoxShape.circle, 
+            border: provider.selectedPeriod == p ? null : Border.all(color: Theme.of(context).hintColor.withValues(alpha: 0.3))
+          ), 
+          child: Text(labels[p]!, 
+            style: TextStyle(
+              color: provider.selectedPeriod == p ? Colors.white : Colors.grey, 
+              fontSize: 10, 
+              fontWeight: FontWeight.bold
+            )
+          )
+        ),
+      )).toList()
+    );
   }
 
   List<PieChartSectionData> _buildChartSections(List<StatItem> items, double thickness) {
-    return List.generate(items.length, (i) => PieChartSectionData(color: items[i].color, value: items[i].value, title: '', radius: thickness, showTitle: false));
+    return List.generate(items.length, (i) => PieChartSectionData(
+      color: items[i].color, 
+      value: items[i].value, 
+      title: '', 
+      radius: thickness, 
+      showTitle: false
+    ));
   }
 
   List<PieChartSectionData> _buildIndicatorSections(List<StatItem> items, int selectedIndex, double thickness) {
-    return List.generate(items.length, (i) => PieChartSectionData(color: i == selectedIndex ? items[i].color : Colors.transparent, value: items[i].value, title: '', radius: thickness, showTitle: false));
+    return List.generate(items.length, (i) => PieChartSectionData(
+      color: i == selectedIndex ? items[i].color : Colors.transparent, 
+      value: items[i].value, 
+      title: '', 
+      radius: thickness, 
+      showTitle: false
+    ));
   }
 
   List<Widget> _buildLegend(BuildContext context, DataProvider provider, List<StatItem> items, int selectedIndex) {
@@ -187,12 +235,17 @@ class DashboardScreen extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Container(width: 16, height: 8, decoration: BoxDecoration(color: item.color, borderRadius: BorderRadius.circular(4))),
+                Container(
+                  width: 16, height: 8, 
+                  decoration: BoxDecoration(color: item.color, borderRadius: BorderRadius.circular(4))
+                ),
                 const SizedBox(width: 12),
                 Expanded(child: Text(displayTitle, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
                 Text('${item.percentage.toStringAsFixed(1)} %', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 const SizedBox(width: 8),
-                Text('(${NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 2).format(item.value)})', style: TextStyle(color: Theme.of(context).hintColor, fontSize: 13)),
+                Text('(${NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 2).format(item.value)})', 
+                  style: TextStyle(color: Theme.of(context).hintColor, fontSize: 13)
+                ),
               ],
             ),
           ),
@@ -202,10 +255,54 @@ class DashboardScreen extends StatelessWidget {
   }
 
   void _showHistoryModal(BuildContext context) {
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => FractionallySizedBox(heightFactor: 0.9, child: Container(decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))), child: const HistoryScreen(isModal: true))));
+    showModalBottomSheet(
+      context: context, 
+      isScrollControlled: true, 
+      backgroundColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias, // Clipping toegevoegd
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.9, 
+        child: Container(
+          clipBehavior: Clip.antiAlias, // Clipping toegevoegd
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor, 
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24))
+          ), 
+          child: const HistoryScreen(isModal: true)
+        )
+      )
+    );
   }
 
   void _showVehicleSelector(BuildContext context, DataProvider provider) {
-    showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))), builder: (context) => ListView(padding: const EdgeInsets.all(24), children: provider.cars.map((c) => ListTile(leading: Icon(Icons.directions_car, color: provider.themeColor), title: Text(c.name), onTap: () { provider.selectCar(c); Navigator.pop(context); })).toList()));
+    showModalBottomSheet(
+      context: context, 
+      isScrollControlled: true, 
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))), 
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: ListView(
+            shrinkWrap: true,
+            children: provider.cars.map((c) {
+              final isSelected = provider.selectedCar?.id == c.id;
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                leading: Icon(Icons.directions_car, color: isSelected ? provider.themeColor : Colors.grey), 
+                title: Text(c.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)), 
+                trailing: isSelected ? Icon(Icons.check, color: provider.themeColor) : null,
+                onTap: () { 
+                  provider.selectCar(c); 
+                  Navigator.pop(context); 
+                }
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
   }
 }

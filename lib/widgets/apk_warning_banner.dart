@@ -13,15 +13,15 @@ class ApkWarningBanner extends StatelessWidget {
     if (status['show'] == false) return const SizedBox.shrink();
 
     return Padding(
-      // AANGEPAST: Bottom is nu 0 (was 8)
-      // De '16' pixels tussenruimte wordt nu geregeld door de padding van het volgende element.
+      // Bottom is 0, de ruimte eronder wordt geregeld in het volgende element
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 0), 
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        height: 72, // Vaste hoogte, gelijk aan de menu items en invulvelden
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
           color: status['color'],
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(24), // Gelijke thema afronding
           boxShadow: [
             BoxShadow(
               color: status['color'].withValues(alpha: 0.3),
@@ -51,9 +51,10 @@ class ApkWarningBanner extends StatelessWidget {
             if (status['dismissible'])
               GestureDetector(
                 onTap: () => provider.dismissApkWarning(),
-                child: const Padding(
-                  padding: EdgeInsets.only(left: 8.0),
-                  child: Icon(Icons.close, color: Colors.white, size: 20),
+                child: Container(
+                  padding: const EdgeInsets.all(8.0),
+                  color: Colors.transparent, // Transparant voor grotere klikzone
+                  child: const Icon(Icons.close, color: Colors.white, size: 20),
                 ),
               ),
           ],

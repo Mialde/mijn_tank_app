@@ -11,6 +11,7 @@ import 'package:excel/excel.dart' as ex;
 import 'package:csv/csv.dart';
 import '../models/car.dart';
 import '../models/fuel_entry.dart';
+import '../models/maintenance_entry.dart';
 
 class DataService {
   // De bestandsnaam volgt nu: TankAppie_backup_ddmmyyyyhhmmss.ext
@@ -20,9 +21,29 @@ class DataService {
     return 'TankAppie_backup_$timestamp.$extension';
   }
 
+  // Helper om autonaam op te halen
+  static String _getCarName(int carId, List<Car> cars) {
+    try {
+      final car = cars.firstWhere((c) => c.id == carId);
+      return '${car.name} (${car.licensePlate})';
+    } catch (e) {
+      return 'Onbekend voertuig';
+    }
+  }
+
   // --- PDF GENERATIE ---
-  static Future<pw.Document> _generatePDFDoc(Car car, List<FuelEntry> entries) async {
-    final pdf = pw.Document();
+  static Future<pw.Document> _generatePDFDoc(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) async {
+    // Laad Google Fonts in via de printing package voor Euroteken (€) ondersteuning
+    final fontRegular = await PdfGoogleFonts.robotoRegular();
+    final fontBold = await PdfGoogleFonts.robotoBold();
+
+    final pdf = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: fontRegular,
+        bold: fontBold,
+      ),
+    );
+    
     final dateFormat = DateFormat('dd-MM-yyyy', 'nl_NL');
 
     pdf.addPage(
@@ -35,35 +56,63 @@ class DataService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text('TankAppie Rapport', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
-                pw.Text(car.name, style: pw.TextStyle(fontSize: 18, color: PdfColors.grey700)),
+                pw.Text('Alle Voertuigen', style: pw.TextStyle(fontSize: 18, color: PdfColors.grey700)),
               ],
             ),
           ),
           pw.SizedBox(height: 20),
+          
+          pw.Text('Tankbeurten', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 10),
           pw.TableHelper.fromTextArray(
             headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF00D09E)),
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
-            headers: ['Datum', 'KM-stand', 'Liters', 'Totaal'],
-            data: entries.map((e) => [
-              dateFormat.format(e.date),
-              '${e.odometer.toInt()} km',
-              '${e.liters.toStringAsFixed(2)} L',
-              '€ ${e.priceTotal.toStringAsFixed(2)}',
-            ]).toList(),
+            headers: ['Voertuig', 'Datum', 'KM-stand', 'Liters', 'Prijs/L', 'Totaal'],
+            data: fuelEntries.map((e) {
+              final pricePerLiter = e.liters > 0 ? e.priceTotal / e.liters : 0.0;
+              return [
+                _getCarName(e.carId, cars),
+                dateFormat.format(e.date),
+                '${e.odometer.toInt()} km',
+                '${e.liters.toStringAsFixed(2)} L',
+                '€ ${pricePerLiter.toStringAsFixed(3)}',
+                '€ ${e.priceTotal.toStringAsFixed(2)}',
+              ];
+            }).toList(),
           ),
+
+          pw.SizedBox(height: 30),
+
+          if (maintenanceEntries.isNotEmpty) ...[
+            pw.Text('Onderhoud', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 10),
+            pw.TableHelper.fromTextArray(
+              headerDecoration: const pw.BoxDecoration(color: PdfColors.orange),
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+              headers: ['Voertuig', 'Datum', 'Type', 'Omschrijving', 'KM', 'Kosten'],
+              data: maintenanceEntries.map((e) => [
+                _getCarName(e.carId, cars),
+                dateFormat.format(e.date),
+                e.type,
+                e.description,
+                '${e.odometer.toInt()} km',
+                '€ ${e.cost.toStringAsFixed(2)}',
+              ]).toList(),
+            ),
+          ]
         ],
       ),
     );
     return pdf;
   }
 
-  static Future<void> exportToPDF(Car car, List<FuelEntry> entries) async {
-    final pdf = await _generatePDFDoc(car, entries);
+  static Future<void> exportToPDF(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) async {
+    final pdf = await _generatePDFDoc(cars, fuelEntries, maintenanceEntries);
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
-  static Future<void> savePDFLocally(Car car, List<FuelEntry> entries) async {
-    final pdf = await _generatePDFDoc(car, entries);
+  static Future<void> savePDFLocally(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) async {
+    final pdf = await _generatePDFDoc(cars, fuelEntries, maintenanceEntries);
     final bytes = await pdf.save();
     await FilePicker.platform.saveFile(
       dialogTitle: 'Sla PDF Rapport op',
@@ -73,24 +122,51 @@ class DataService {
   }
 
   // --- CSV GENERATIE ---
-  static String _generateCSVString(List<FuelEntry> entries) {
-    List<List<dynamic>> rows = [["Datum", "KM-stand", "Liters", "Totaal"]];
-    for (var e in entries) {
-      rows.add([e.date.toIso8601String(), e.odometer, e.liters, e.priceTotal]);
+  static String _generateCSVString(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) {
+    List<List<dynamic>> rows = [];
+    
+    rows.add(["--- TANKBEURTEN ---"]);
+    rows.add(["Voertuig", "Datum", "KM-stand", "Liters", "Prijs/L", "Totaal"]);
+    for (var e in fuelEntries) {
+      final pricePerLiter = e.liters > 0 ? e.priceTotal / e.liters : 0.0;
+      rows.add([
+        _getCarName(e.carId, cars),
+        e.date.toIso8601String().split('T')[0],
+        e.odometer,
+        e.liters,
+        pricePerLiter,
+        e.priceTotal
+      ]);
+    }
+
+    if (maintenanceEntries.isNotEmpty) {
+      rows.add([]);
+      rows.add(["--- ONDERHOUD ---"]);
+      rows.add(["Voertuig", "Datum", "Type", "Omschrijving", "KM-stand", "Kosten"]);
+      for (var e in maintenanceEntries) {
+        rows.add([
+          _getCarName(e.carId, cars),
+          e.date.toIso8601String().split('T')[0],
+          e.type,
+          e.description,
+          e.odometer,
+          e.cost
+        ]);
+      }
     }
     return const ListToCsvConverter(fieldDelimiter: ';').convert(rows);
   }
 
-  static Future<void> shareAsCSV(List<FuelEntry> entries) async {
-    final csvData = _generateCSVString(entries);
+  static Future<void> shareAsCSV(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) async {
+    final csvData = _generateCSVString(cars, fuelEntries, maintenanceEntries);
     final fileName = _getFilename('csv');
     final file = File('${Directory.systemTemp.path}/$fileName');
     await file.writeAsString(csvData);
     await Share.shareXFiles([XFile(file.path)], text: 'Tank Data CSV');
   }
 
-  static Future<void> saveCSVLocally(List<FuelEntry> entries) async {
-    final csvData = _generateCSVString(entries);
+  static Future<void> saveCSVLocally(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) async {
+    final csvData = _generateCSVString(cars, fuelEntries, maintenanceEntries);
     final bytes = Uint8List.fromList(utf8.encode(csvData));
     await FilePicker.platform.saveFile(
       dialogTitle: 'Sla CSV op',
@@ -100,19 +176,45 @@ class DataService {
   }
 
   // --- EXCEL GENERATIE ---
-  static Uint8List? _generateExcelBytes(List<FuelEntry> entries) {
+  static Uint8List? _generateExcelBytes(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) {
     var excel = ex.Excel.createExcel();
-    ex.Sheet sheet = excel['TankData'];
-    sheet.appendRow([ex.TextCellValue("Datum"), ex.TextCellValue("KM"), ex.TextCellValue("Liters"), ex.TextCellValue("Prijs")]);
-    for (var e in entries) {
-      sheet.appendRow([ex.TextCellValue(e.date.toString()), ex.DoubleCellValue(e.odometer), ex.DoubleCellValue(e.liters), ex.DoubleCellValue(e.priceTotal)]);
+    excel.rename(excel.getDefaultSheet()!, 'Tankbeurten');
+    
+    ex.Sheet fuelSheet = excel['Tankbeurten'];
+    fuelSheet.appendRow([ex.TextCellValue("Voertuig"), ex.TextCellValue("Datum"), ex.TextCellValue("KM-stand"), ex.TextCellValue("Liters"), ex.TextCellValue("Prijs/L"), ex.TextCellValue("Totaal")]);
+    for (var e in fuelEntries) {
+      final pricePerLiter = e.liters > 0 ? e.priceTotal / e.liters : 0.0;
+      fuelSheet.appendRow([
+        ex.TextCellValue(_getCarName(e.carId, cars)),
+        ex.TextCellValue(e.date.toIso8601String().split('T')[0]),
+        ex.DoubleCellValue(e.odometer),
+        ex.DoubleCellValue(e.liters),
+        ex.DoubleCellValue(pricePerLiter),
+        ex.DoubleCellValue(e.priceTotal)
+      ]);
     }
+
+    if (maintenanceEntries.isNotEmpty) {
+      ex.Sheet maintSheet = excel['Onderhoud'];
+      maintSheet.appendRow([ex.TextCellValue("Voertuig"), ex.TextCellValue("Datum"), ex.TextCellValue("Type"), ex.TextCellValue("Omschrijving"), ex.TextCellValue("KM-stand"), ex.TextCellValue("Kosten")]);
+      for (var e in maintenanceEntries) {
+        maintSheet.appendRow([
+          ex.TextCellValue(_getCarName(e.carId, cars)),
+          ex.TextCellValue(e.date.toIso8601String().split('T')[0]),
+          ex.TextCellValue(e.type),
+          ex.TextCellValue(e.description),
+          ex.DoubleCellValue(e.odometer),
+          ex.DoubleCellValue(e.cost)
+        ]);
+      }
+    }
+
     final bytes = excel.save();
     return bytes != null ? Uint8List.fromList(bytes) : null;
   }
 
-  static Future<void> shareAsExcel(List<FuelEntry> entries) async {
-    final bytes = _generateExcelBytes(entries);
+  static Future<void> shareAsExcel(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) async {
+    final bytes = _generateExcelBytes(cars, fuelEntries, maintenanceEntries);
     if (bytes != null) {
       final fileName = _getFilename('xlsx');
       final file = File('${Directory.systemTemp.path}/$fileName');
@@ -121,8 +223,8 @@ class DataService {
     }
   }
 
-  static Future<void> saveExcelLocally(List<FuelEntry> entries) async {
-    final bytes = _generateExcelBytes(entries);
+  static Future<void> saveExcelLocally(List<Car> cars, List<FuelEntry> fuelEntries, List<MaintenanceEntry> maintenanceEntries) async {
+    final bytes = _generateExcelBytes(cars, fuelEntries, maintenanceEntries);
     if (bytes != null) {
       await FilePicker.platform.saveFile(
         dialogTitle: 'Sla Excel op',
