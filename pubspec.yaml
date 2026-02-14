@@ -22,6 +22,11 @@ dependencies:
   gsheets: ^0.5.0
   http: ^1.1.0
   
+  # Camera & OCR voor kenteken scanning
+  camera: ^0.10.5+9
+  google_mlkit_text_recognition: ^0.13.0
+  permission_handler: ^11.3.1
+  
   google_fonts: ^5.1.0
   font_awesome_flutter: ^10.5.0
   fl_chart: ^0.70.2

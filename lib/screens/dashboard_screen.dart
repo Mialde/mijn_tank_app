@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -40,6 +41,11 @@ class DashboardScreen extends StatelessWidget {
         titleSpacing: 24,
         elevation: 0,
         backgroundColor: Colors.transparent,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDarkMode ? Brightness.light : Brightness.dark,
+          statusBarBrightness: isDarkMode ? Brightness.dark : Brightness.light,
+        ),
         actions: [
           // Geschiedenis: Neutraal thema
           IconButton(

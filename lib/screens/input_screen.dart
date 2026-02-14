@@ -83,9 +83,9 @@ class _InputScreenState extends State<InputScreen> {
         actions: [
           // Onderhoud: Neutraal thema
           IconButton(
-            icon: Stack(
+            icon: const Stack(
               alignment: Alignment.center,
-              children: const [
+              children: [
                 Icon(Icons.circle_outlined, size: 24),
                 Icon(Icons.build, size: 12),
               ],
@@ -173,7 +173,18 @@ class _InputScreenState extends State<InputScreen> {
                             );
                             if (picked != null) setState(() => _selectedDate = picked);
                           },
-                          child: Card(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardTheme.color,
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: Theme.of(context).brightness == Brightness.dark ? 0.3 : 0.05),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
                             child: SizedBox(
                               height: 72,
                               child: Row(
@@ -222,7 +233,20 @@ class _InputScreenState extends State<InputScreen> {
     required String suffix,
     required Color color,
   }) {
-    return Card(
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
       child: SizedBox(
         height: 72,
         child: Center(

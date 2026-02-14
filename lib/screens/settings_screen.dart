@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../data_provider.dart';
 import '../services/data_service.dart';
+import '../services/rdw_service.dart';
 import '../models/car.dart';
 import '../models/fuel_entry.dart';
-import '../models/maintenance_entry.dart';
+import '../widgets/pole_position_game.dart';
+import '../widgets/license_plate_scanner.dart';
 import 'developer_notes_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -19,6 +21,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _nameController;
   final List<String> _vehicleTypes = ['Auto', 'Motor', 'Vrachtwagen', 'Scooter', 'Bus', 'Camper', 'Tractor', 'Bestelwagen'];
   final String _version = "v1.0.6 (Beta)";
+  
+  // Easter Egg activation
+  int _versionTapCount = 0;
+  DateTime? _lastTap;
 
   @override
   void initState() {
@@ -72,7 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: const Text('Begroeting tonen'),
                       trailing: Switch(
                         value: settings.useGreeting,
-                        activeColor: appColor,
+                        activeTrackColor: appColor,
                         onChanged: (v) => provider.updateSettings(settings.copyWith(useGreeting: v)),
                       ),
                       onTap: () => provider.updateSettings(settings.copyWith(useGreeting: !settings.useGreeting)),
@@ -83,7 +89,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: const Text('Quotes tonen'),
                       trailing: Switch(
                         value: settings.showQuotes,
-                        activeColor: appColor,
+                        activeTrackColor: appColor,
                         onChanged: (v) => provider.updateSettings(settings.copyWith(showQuotes: v)),
                       ),
                       onTap: () => provider.updateSettings(settings.copyWith(showQuotes: !settings.showQuotes)),
@@ -209,9 +215,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 24, top: 24),
-                child: Text(
-                  'TankAppie $_version',
-                  style: TextStyle(color: Colors.grey.withValues(alpha: 0.5), fontSize: 12, fontWeight: FontWeight.bold),
+                child: GestureDetector(
+                  onTap: () => _handleVersionTap(context, appColor),
+                  child: Text(
+                    'TankAppie $_version',
+                    style: TextStyle(color: Colors.grey.withValues(alpha: 0.5), fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ),
@@ -502,9 +511,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildAccordionCard({required String title, required IconData icon, required Color appColor, required List<Widget> children}) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     return Container(
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white10)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color, 
+        borderRadius: BorderRadius.circular(24), 
+        border: Border.all(color: Colors.white10),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -549,12 +571,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showCarDialog(BuildContext context, DataProvider provider, Color color, {Car? car}) {
-    final name = TextEditingController(text: car?.name);
     final plate = TextEditingController(text: car?.licensePlate);
+    final name = TextEditingController(text: car?.name);
     final insurance = TextEditingController(text: car?.insurance.toString().replaceAll('.', ',') ?? '0');
     final tax = TextEditingController(text: car?.roadTax.toString().replaceAll('.', ',') ?? '0');
     String selectedType = _vehicleTypes.contains(car?.type) ? car!.type : 'Auto';
     DateTime? apk = car?.apkDate;
+    String? fuelType = car?.fuelType;
+    String? owner = car?.owner;
+    bool isLoadingRdw = false;
+    bool manualMode = car != null; // Bij bestaande auto direct handmatig mode
 
     showDialog(
       context: context,
@@ -566,26 +592,235 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String>(
-                  initialValue: selectedType, 
-                  decoration: const InputDecoration(labelText: 'Type Voertuig'),
-                  items: _vehicleTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                  onChanged: (v) => setDialogState(() => selectedType = v!),
+                // Kenteken met RDW lookup en camera scan knoppen
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: plate,
+                        decoration: const InputDecoration(
+                          labelText: 'Kenteken',
+                          hintText: 'Bijv: KT-915-G',
+                        ),
+                        textCapitalization: TextCapitalization.characters,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Camera scan knop
+                    IconButton(
+                      icon: const Icon(Icons.camera_alt),
+                      tooltip: 'Scan kenteken met camera',
+                      onPressed: () async {
+                        final scannedPlate = await Navigator.push<String>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LicensePlateScanner(),
+                          ),
+                        );
+                        
+                        if (scannedPlate != null && scannedPlate.isNotEmpty) {
+                          plate.text = scannedPlate;
+                          // Trigger RDW lookup automatically
+                          if (!isLoadingRdw) {
+                            // Simulate RDW button press
+                            Future.delayed(const Duration(milliseconds: 300), () async {
+                              if (!mounted) return;
+                              
+                              setDialogState(() => isLoadingRdw = true);
+
+                              try {
+                                final rdwData = await RdwService.getVehicleData(plate.text);
+
+                                if (rdwData == null) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Kenteken niet gevonden in RDW database'),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  plate.text = RdwService.normalizeLicensePlate(plate.text);
+                                  
+                                  setDialogState(() {
+                                    name.text = rdwData.getVehicleName();
+                                    selectedType = rdwData.getVehicleType();
+                                    apk = rdwData.apkVervaldatum;
+                                    fuelType = rdwData.brandstof;
+                                    owner = rdwData.eigenaar;
+                                    manualMode = true;
+                                  });
+
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('✅ Kenteken gescand en RDW gegevens opgehaald!'),
+                                        backgroundColor: Colors.green,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Fout: ${e.toString().replaceAll('Exception: ', '')}'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                setDialogState(() => isLoadingRdw = false);
+                              }
+                            });
+                          }
+                        }
+                      },
+                    ),
+                    // RDW lookup knop
+                    IconButton(
+                      icon: isLoadingRdw
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.search),
+                      tooltip: 'Gegevens ophalen van RDW',
+                      onPressed: isLoadingRdw
+                          ? null
+                          : () async {
+                              if (plate.text.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Voer eerst een kenteken in')),
+                                );
+                                return;
+                              }
+
+                              setDialogState(() => isLoadingRdw = true);
+
+                              try {
+                                final rdwData = await RdwService.getVehicleData(plate.text);
+
+                                if (rdwData == null) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Kenteken niet gevonden in RDW database'),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  // Normaliseer kenteken (verwijder leestekens)
+                                  plate.text = RdwService.normalizeLicensePlate(plate.text);
+                                  
+                                  // Vul gegevens in
+                                  setDialogState(() {
+                                    name.text = rdwData.getVehicleName();
+                                    selectedType = rdwData.getVehicleType();
+                                    apk = rdwData.apkVervaldatum;
+                                    fuelType = rdwData.brandstof;
+                                    owner = rdwData.eigenaar;
+                                    manualMode = true; // Schakel naar handmatige mode
+                                  });
+
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('✅ RDW gegevens opgehaald!'),
+                                        backgroundColor: Colors.green,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Fout: ${e.toString().replaceAll('Exception: ', '')}'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                setDialogState(() => isLoadingRdw = false);
+                              }
+                            },
+                    ),
+                  ],
                 ),
-                TextField(controller: name, decoration: const InputDecoration(labelText: 'Naam')),
-                TextField(controller: plate, decoration: const InputDecoration(labelText: 'Kenteken')),
-                TextField(controller: insurance, decoration: const InputDecoration(labelText: 'Verzekering p/m'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                TextField(controller: tax, decoration: const InputDecoration(labelText: 'Wegenbelasting'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                ListTile(
-                  minTileHeight: 72,
+                
+                const SizedBox(height: 16),
+                
+                // Toggle voor handmatige invoer
+                SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('APK Datum'),
-                  subtitle: Text(apk == null ? 'Kies datum' : DateFormat('dd-MM-yyyy').format(apk!)),
-                  onTap: () async {
-                    final d = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2100), locale: const Locale('nl', 'NL'));
-                    if (d != null) setDialogState(() => apk = d);
-                  },
+                  title: const Text('Handmatig gegevens invoeren'),
+                  value: manualMode,
+                  activeColor: color,
+                  onChanged: (value) => setDialogState(() => manualMode = value),
                 ),
+                
+                // Handmatige velden (alleen zichtbaar als toggle aan staat)
+                if (manualMode) ...[
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: selectedType,
+                    decoration: const InputDecoration(labelText: 'Type Voertuig'),
+                    items: _vehicleTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                    onChanged: (v) => setDialogState(() => selectedType = v!),
+                  ),
+                  TextField(controller: name, decoration: const InputDecoration(labelText: 'Naam')),
+                  
+                  // APK Datum
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('APK Datum'),
+                    subtitle: Text(apk == null ? 'Kies datum' : DateFormat('dd-MM-yyyy').format(apk!)),
+                    trailing: apk != null
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 20),
+                            onPressed: () => setDialogState(() => apk = null),
+                          )
+                        : null,
+                    onTap: () async {
+                      final d = await showDatePicker(
+                        context: context,
+                        initialDate: apk ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                        locale: const Locale('nl', 'NL'),
+                      );
+                      if (d != null) setDialogState(() => apk = d);
+                    },
+                  ),
+                  
+                  TextField(controller: insurance, decoration: const InputDecoration(labelText: 'Verzekering p/m (€)'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  TextField(controller: tax, decoration: const InputDecoration(labelText: 'Wegenbelasting p/m (€)'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  
+                  // Extra RDW info (indien beschikbaar, read-only)
+                  if (fuelType != null) ...[
+                    const SizedBox(height: 8),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      leading: const Icon(Icons.local_gas_station, size: 20),
+                      title: Text('Brandstof: $fuelType', style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                    ),
+                  ],
+                  if (owner != null) ...[
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      leading: const Icon(Icons.person, size: 20),
+                      title: Text('Eigenaar: $owner', style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                    ),
+                  ],
+                ],
               ],
             ),
           ),
@@ -593,10 +828,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuleer')),
             ElevatedButton(
               onPressed: () {
+                // Validatie
+                if (plate.text.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Kenteken is verplicht')),
+                  );
+                  return;
+                }
+                
+                if (manualMode && name.text.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Naam is verplicht')),
+                  );
+                  return;
+                }
+                
                 final newCar = Car(
-                  id: car?.id, name: name.text, licensePlate: plate.text, type: selectedType,
-                  apkDate: apk, insurance: double.tryParse(insurance.text.replaceAll(',', '.')) ?? 0,
-                  roadTax: double.tryParse(tax.text.replaceAll(',', '.')) ?? 0, roadTaxFreq: 'Maandelijks',
+                  id: car?.id,
+                  name: manualMode ? name.text : (name.text.isNotEmpty ? name.text : 'Auto'),
+                  licensePlate: RdwService.normalizeLicensePlate(plate.text),
+                  type: selectedType,
+                  apkDate: apk,
+                  insurance: double.tryParse(insurance.text.replaceAll(',', '.')) ?? 0,
+                  roadTax: double.tryParse(tax.text.replaceAll(',', '.')) ?? 0,
+                  roadTaxFreq: 'Maandelijks',
+                  fuelType: fuelType,
+                  owner: owner,
                 );
                 car == null ? provider.addCar(newCar) : provider.updateCar(newCar);
                 Navigator.pop(context);
@@ -688,6 +945,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           Text(label, style: TextStyle(fontSize: 12, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? appColor : Colors.grey)),
         ],
+      ),
+    );
+  }
+
+  void _handleVersionTap(BuildContext context, Color appColor) {
+    final now = DateTime.now();
+    
+    // Reset counter if more than 2 seconds since last tap
+    if (_lastTap != null && now.difference(_lastTap!) > const Duration(seconds: 2)) {
+      _versionTapCount = 0;
+    }
+    
+    _lastTap = now;
+    _versionTapCount++;
+    
+    if (_versionTapCount >= 7) {
+      _versionTapCount = 0;
+      _launchPolePosition(context, appColor);
+    }
+  }
+
+  void _launchPolePosition(BuildContext context, Color appColor) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PolePositionGame(themeColor: appColor),
       ),
     );
   }

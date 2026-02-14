@@ -56,7 +56,7 @@ class DataService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text('TankAppie Rapport', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
-                pw.Text('Alle Voertuigen', style: pw.TextStyle(fontSize: 18, color: PdfColors.grey700)),
+                pw.Text('Alle Voertuigen', style: const pw.TextStyle(fontSize: 18, color: PdfColors.grey700)),
               ],
             ),
           ),

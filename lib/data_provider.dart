@@ -50,13 +50,27 @@ class DataProvider with ChangeNotifier {
     _settings = await DatabaseHelper.instance.getSettings();
     _cars = await DatabaseHelper.instance.getAllCars();
     _notes = await DatabaseHelper.instance.getAllNotes();
+    
+    // Auto selectie logica
     if (_cars.isNotEmpty) {
+      // Selecteer eerste auto (of later: laatst gebruikte)
       _selectedCar = _cars.first;
+      print('✓ Auto geselecteerd: ${_selectedCar!.name} (${_selectedCar!.licensePlate})');
       await fetchEntries();
       await fetchMaintenance();
+    } else {
+      print('⚠ Geen auto\'s gevonden in database');
+      _selectedCar = null;
     }
+    
     _setRandomQuote();
     _setLoading(false);
+    
+    // Debug info
+    print('App geïnitialiseerd:');
+    print('  - Auto\'s: ${_cars.length}');
+    print('  - Geselecteerde auto: ${_selectedCar?.name ?? "GEEN"}');
+    print('  - Tankbeurten: ${_entries.length}');
   }
 
   void _setRandomQuote() {
@@ -93,8 +107,36 @@ class DataProvider with ChangeNotifier {
   Future<void> addMaintenance(MaintenanceEntry entry) async { await DatabaseHelper.instance.insertMaintenance(entry); await fetchMaintenance(); }
   Future<void> updateMaintenance(MaintenanceEntry entry) async { await DatabaseHelper.instance.updateMaintenance(entry); await fetchMaintenance(); }
   Future<void> deleteMaintenance(int id) async { await DatabaseHelper.instance.deleteMaintenance(id); await fetchMaintenance(); }
-  Future<void> addCar(Car car) async { await DatabaseHelper.instance.insertCar(car); _cars = await DatabaseHelper.instance.getAllCars(); notifyListeners(); }
-  Future<void> updateCar(Car car) async { await DatabaseHelper.instance.updateCar(car); _cars = await DatabaseHelper.instance.getAllCars(); notifyListeners(); }
+  Future<void> addCar(Car car) async { 
+    await DatabaseHelper.instance.insertCar(car); 
+    _cars = await DatabaseHelper.instance.getAllCars(); 
+    
+    // Selecteer de nieuw toegevoegde auto automatisch
+    // De nieuwe auto is de laatste in de lijst (heeft hoogste ID)
+    if (_cars.isNotEmpty) {
+      _selectedCar = _cars.last;
+      print('✓ Nieuw toegevoegde auto geselecteerd: ${_selectedCar!.name}');
+      await fetchEntries();
+      await fetchMaintenance();
+    }
+    
+    notifyListeners(); 
+  }
+  
+  Future<void> updateCar(Car car) async { 
+    await DatabaseHelper.instance.updateCar(car); 
+    _cars = await DatabaseHelper.instance.getAllCars(); 
+    
+    // Als de geüpdatete auto de geselecteerde auto is, update de referentie
+    if (_selectedCar?.id == car.id) {
+      _selectedCar = _cars.firstWhere((c) => c.id == car.id);
+      print('✓ Geselecteerde auto geüpdatet: ${_selectedCar!.name}');
+      await fetchEntries();
+      await fetchMaintenance();
+    }
+    
+    notifyListeners(); 
+  }
   Future<void> deleteCar(int id) async { await DatabaseHelper.instance.deleteCar(id); _cars = await DatabaseHelper.instance.getAllCars(); if (_selectedCar?.id == id) _selectedCar = _cars.firstOrNull; notifyListeners(); }
   Future<void> updateSettings(UserSettings newSettings) async { await DatabaseHelper.instance.saveSettings(newSettings); _settings = newSettings; notifyListeners(); }
   Future<void> clearAllEntries() async { if (_selectedCar != null) { await DatabaseHelper.instance.deleteEntriesByCar(_selectedCar!.id!); await fetchEntries(); } }
@@ -113,10 +155,16 @@ class DataProvider with ChangeNotifier {
   DateTime _getStartDate() {
     final now = DateTime.now();
     switch (_selectedPeriod) {
-      case TimePeriod.oneMonth: return DateTime(now.year, now.month, 1);
-      case TimePeriod.sixMonths: return DateTime(now.year, now.month - 6, now.day);
-      case TimePeriod.oneYear: return DateTime(now.year - 1, now.month, now.day);
-      case TimePeriod.allTime: return DateTime(2000); 
+      case TimePeriod.oneMonth: 
+        return DateTime(now.year, now.month, 1);
+      case TimePeriod.sixMonths: 
+        // Fix: Gebruik Duration om crashes te voorkomen bij negatieve maanden
+        return DateTime(now.year, now.month, now.day).subtract(const Duration(days: 180));
+      case TimePeriod.oneYear: 
+        // Fix: Gebruik Duration om crashes te voorkomen
+        return DateTime(now.year, now.month, now.day).subtract(const Duration(days: 365));
+      case TimePeriod.allTime: 
+        return DateTime(2000); 
     }
   }
 
@@ -255,8 +303,16 @@ class DataProvider with ChangeNotifier {
   Future<void> importJsonBackup(String jsonContent) async {
     final data = jsonDecode(jsonContent);
     _setLoading(true);
-    if (data['cars'] != null) for (var c in data['cars']) await DatabaseHelper.instance.insertCar(Car.fromMap(c));
-    if (data['entries'] != null) for (var e in data['entries']) await DatabaseHelper.instance.insertEntry(FuelEntry.fromMap(e));
+    if (data['cars'] != null) {
+      for (var c in data['cars']) {
+        await DatabaseHelper.instance.insertCar(Car.fromMap(c));
+      }
+    }
+    if (data['entries'] != null) {
+      for (var e in data['entries']) {
+        await DatabaseHelper.instance.insertEntry(FuelEntry.fromMap(e));
+      }
+    }
     await initializeApp();
     _setLoading(false);
   }

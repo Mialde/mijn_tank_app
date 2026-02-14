@@ -165,7 +165,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: type,
+                  initialValue: type,
                   items: ['Beurt', 'Reparatie', 'Banden', 'APK', 'Overig'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                   onChanged: (v) => setDialogState(() => type = v!),
                   decoration: const InputDecoration(labelText: 'Type'),

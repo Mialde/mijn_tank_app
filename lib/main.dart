@@ -30,6 +30,12 @@ class _MijnTankAppState extends State<MijnTankApp> {
   final PageController _pageController = PageController();
 
   @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = context.watch<DataProvider>();
     final settings = provider.settings;

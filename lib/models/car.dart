@@ -7,6 +7,8 @@ class Car {
   final double insurance;
   final double roadTax;
   final String roadTaxFreq;
+  final String? fuelType; // Nieuw: Brandstoftype (Benzine/Diesel/Elektrisch/etc)
+  final String? owner; // Nieuw: Laatste tenaamstelling
 
   Car({
     this.id,
@@ -17,6 +19,8 @@ class Car {
     required this.insurance,
     required this.roadTax,
     required this.roadTaxFreq,
+    this.fuelType,
+    this.owner,
   });
 
   Map<String, dynamic> toMap() {
@@ -29,6 +33,8 @@ class Car {
       'insurance': insurance,
       'road_tax': roadTax, // snake_case voor DB
       'road_tax_freq': roadTaxFreq, // snake_case voor DB
+      'fuel_type': fuelType, // snake_case voor DB
+      'owner': owner,
     };
   }
 
@@ -42,6 +48,8 @@ class Car {
       insurance: map['insurance'],
       roadTax: map['road_tax'],
       roadTaxFreq: map['road_tax_freq'],
+      fuelType: map['fuel_type'],
+      owner: map['owner'],
     );
   }
 }

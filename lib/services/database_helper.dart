@@ -24,16 +24,38 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3, // Versie verhoogd voor nieuwe velden
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    print('Database upgrade: v$oldVersion -> v$newVersion');
+    
     if (oldVersion < 2) {
+      print('Adding maintenance table...');
       await _createMaintenanceTable(db);
     }
+    
+    if (oldVersion < 3) {
+      print('Adding fuel_type and owner columns to cars table...');
+      try {
+        await db.execute('ALTER TABLE cars ADD COLUMN fuel_type TEXT');
+        print('✓ fuel_type column added');
+      } catch (e) {
+        print('fuel_type column already exists or error: $e');
+      }
+      
+      try {
+        await db.execute('ALTER TABLE cars ADD COLUMN owner TEXT');
+        print('✓ owner column added');
+      } catch (e) {
+        print('owner column already exists or error: $e');
+      }
+    }
+    
+    print('Database upgrade complete!');
   }
 
   Future _createDB(Database db, int version) async {
@@ -42,7 +64,7 @@ class DatabaseHelper {
     const numType = 'REAL';
     const intType = 'INTEGER';
 
-    await db.execute('CREATE TABLE IF NOT EXISTS cars (id $idType, name $textType, license_plate $textType, type $textType, apk_date $textType, insurance $numType, road_tax $numType, road_tax_freq $textType)');
+    await db.execute('CREATE TABLE IF NOT EXISTS cars (id $idType, name $textType, license_plate $textType, type $textType, apk_date $textType, insurance $numType, road_tax $numType, road_tax_freq $textType, fuel_type $textType, owner $textType)');
     await db.execute('CREATE TABLE IF NOT EXISTS entries (id $idType, car_id $intType, date $textType, odometer $numType, liters $numType, price_total $numType, price_per_liter $numType, fuel_type $textType, FOREIGN KEY (car_id) REFERENCES cars (id) ON DELETE CASCADE)');
     await db.execute('CREATE TABLE IF NOT EXISTS user_settings (id $idType, first_name $textType, theme_mode $textType, accent_color $textType, use_greeting $intType, show_quotes $intType)');
     await db.execute('CREATE TABLE IF NOT EXISTS developer_notes (id $idType, content $textType, date $textType, is_completed $intType)');
@@ -65,8 +87,35 @@ class DatabaseHelper {
   }
 
   // --- CARS ---
-  Future<int> insertCar(Car car) async { final db = await database; return await db.insert('cars', car.toMap()); }
-  Future<List<Car>> getAllCars() async { final db = await database; final result = await db.query('cars'); return result.map((json) => Car.fromMap(json)).toList(); }
+  Future<int> insertCar(Car car) async { 
+    final db = await database; 
+    print('Inserting car: ${car.name} (${car.licensePlate})');
+    return await db.insert('cars', car.toMap()); 
+  }
+  
+  Future<List<Car>> getAllCars() async { 
+    final db = await database; 
+    final result = await db.query('cars');
+    print('getAllCars: Found ${result.length} cars in database');
+    
+    if (result.isEmpty) {
+      print('⚠ Database is leeg - geen auto\'s gevonden!');
+      return [];
+    }
+    
+    try {
+      final cars = result.map((json) {
+        print('  - Loading car: ${json['name']} (${json['license_plate']})');
+        return Car.fromMap(json);
+      }).toList();
+      print('✓ Successfully loaded ${cars.length} cars');
+      return cars;
+    } catch (e) {
+      print('❌ Error loading cars: $e');
+      rethrow;
+    }
+  }
+  
   Future<int> updateCar(Car car) async { final db = await database; return await db.update('cars', car.toMap(), where: 'id = ?', whereArgs: [car.id]); }
   Future<int> deleteCar(int id) async { final db = await database; return await db.delete('cars', where: 'id = ?', whereArgs: [id]); }
 
