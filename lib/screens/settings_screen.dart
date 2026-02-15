@@ -1,3 +1,7 @@
+// LAATST BIJGEWERKT: 2026-02-14 08:15 UTC
+// WIJZIGING: Camera scan knop verwijderd, alleen RDW lookup behouden
+// REDEN: Nothing Phone camera crashes - te instabiel voor productie
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -7,7 +11,6 @@ import '../services/rdw_service.dart';
 import '../models/car.dart';
 import '../models/fuel_entry.dart';
 import '../widgets/pole_position_game.dart';
-import '../widgets/license_plate_scanner.dart';
 import 'developer_notes_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -592,7 +595,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Kenteken met RDW lookup en camera scan knoppen
+                // Kenteken met RDW lookup knop
                 Row(
                   children: [
                     Expanded(
@@ -606,79 +609,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Camera scan knop
-                    IconButton(
-                      icon: const Icon(Icons.camera_alt),
-                      tooltip: 'Scan kenteken met camera',
-                      onPressed: () async {
-                        final scannedPlate = await Navigator.push<String>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const LicensePlateScanner(),
-                          ),
-                        );
-                        
-                        if (scannedPlate != null && scannedPlate.isNotEmpty) {
-                          plate.text = scannedPlate;
-                          // Trigger RDW lookup automatically
-                          if (!isLoadingRdw) {
-                            // Simulate RDW button press
-                            Future.delayed(const Duration(milliseconds: 300), () async {
-                              if (!mounted) return;
-                              
-                              setDialogState(() => isLoadingRdw = true);
-
-                              try {
-                                final rdwData = await RdwService.getVehicleData(plate.text);
-
-                                if (rdwData == null) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Kenteken niet gevonden in RDW database'),
-                                        backgroundColor: Colors.orange,
-                                      ),
-                                    );
-                                  }
-                                } else {
-                                  plate.text = RdwService.normalizeLicensePlate(plate.text);
-                                  
-                                  setDialogState(() {
-                                    name.text = rdwData.getVehicleName();
-                                    selectedType = rdwData.getVehicleType();
-                                    apk = rdwData.apkVervaldatum;
-                                    fuelType = rdwData.brandstof;
-                                    owner = rdwData.eigenaar;
-                                    manualMode = true;
-                                  });
-
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('✅ Kenteken gescand en RDW gegevens opgehaald!'),
-                                        backgroundColor: Colors.green,
-                                        duration: Duration(seconds: 2),
-                                      ),
-                                    );
-                                  }
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Fout: ${e.toString().replaceAll('Exception: ', '')}'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              } finally {
-                                setDialogState(() => isLoadingRdw = false);
-                              }
-                            });
-                          }
-                        }
-                      },
-                    ),
                     // RDW lookup knop
                     IconButton(
                       icon: isLoadingRdw

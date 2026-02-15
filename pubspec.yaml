@@ -1,3 +1,7 @@
+# LAATST BIJGEWERKT: 2026-02-14 08:15 UTC
+# WIJZIGING: Camera packages verwijderd (camera, google_mlkit_text_recognition, permission_handler)
+# REDEN: Nothing Phone camera bugs - feature volledig verwijderd
+
 name: mijn_tank_app
 description: "A new Flutter project."
 publish_to: 'none'
@@ -21,11 +25,6 @@ dependencies:
   excel: ^4.0.6
   gsheets: ^0.5.0
   http: ^1.1.0
-  
-  # Camera & OCR voor kenteken scanning
-  camera: ^0.10.5+9
-  google_mlkit_text_recognition: ^0.13.0
-  permission_handler: ^11.3.1
   
   google_fonts: ^5.1.0
   font_awesome_flutter: ^10.5.0
