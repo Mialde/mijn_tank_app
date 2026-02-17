@@ -1,8 +1,7 @@
-// LAATST BIJGEWERKT: 2026-02-14 08:30 UTC
-// WIJZIGING: Smart database importer met oude versie detectie en RDW auto-fill
-// REDEN: Gebruiksvriendelijke import van oude backups met missende velden
+// LAATST BIJGEWERKT: 2026-02-15 19:15 UTC
+// WIJZIGING: Removed unused dart:convert import
+// REDEN: Clean code, fix linter warning
 
-import 'dart:convert';
 import '../models/car.dart';
 import '../models/fuel_entry.dart';
 import '../models/maintenance_entry.dart';

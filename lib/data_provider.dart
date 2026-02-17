@@ -303,16 +303,78 @@ class DataProvider with ChangeNotifier {
   Future<void> importJsonBackup(String jsonContent) async {
     final data = jsonDecode(jsonContent);
     _setLoading(true);
+    
+    // Get existing cars to check for duplicates
+    final existingCars = await DatabaseHelper.instance.getAllCars();
+    final Map<int, int> oldIdToNewId = {}; // Map old IDs to new/existing IDs
+    
+    // Import cars with duplicate check
     if (data['cars'] != null) {
       for (var c in data['cars']) {
-        await DatabaseHelper.instance.insertCar(Car.fromMap(c));
+        final carMap = Map<String, dynamic>.from(c);
+        final oldId = carMap['id'];
+        final licensePlate = (carMap['license_plate'] as String?)?.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '') ?? '';
+        
+        // Check if car with same license plate exists
+        final existingCar = existingCars.firstWhere(
+          (car) => car.licensePlate.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '') == licensePlate,
+          orElse: () => Car(
+            name: '',
+            licensePlate: '',
+            type: '',
+            insurance: 0,
+            roadTax: 0,
+            roadTaxFreq: '',
+          ),
+        );
+        
+        if (existingCar.licensePlate.isNotEmpty) {
+          // Update existing car instead of creating duplicate
+          print('⚙️ Updating existing car: ${existingCar.name} ($licensePlate)');
+          
+          final updatedCar = Car(
+            id: existingCar.id,
+            name: carMap['name'] ?? existingCar.name,
+            licensePlate: existingCar.licensePlate,
+            type: carMap['type'] ?? existingCar.type,
+            apkDate: carMap['apk_date'] != null ? DateTime.tryParse(carMap['apk_date']) : existingCar.apkDate,
+            insurance: (carMap['insurance'] ?? existingCar.insurance).toDouble(),
+            roadTax: (carMap['road_tax'] ?? existingCar.roadTax).toDouble(),
+            roadTaxFreq: carMap['road_tax_freq'] ?? existingCar.roadTaxFreq,
+            fuelType: carMap['fuel_type'] ?? existingCar.fuelType,
+            owner: carMap['owner'] ?? existingCar.owner,
+          );
+          
+          await DatabaseHelper.instance.updateCar(updatedCar);
+          oldIdToNewId[oldId] = existingCar.id!;
+          
+        } else {
+          // New car - insert
+          carMap.remove('id'); // Let DB assign new ID
+          final newCarId = await DatabaseHelper.instance.insertCar(Car.fromMap(carMap));
+          oldIdToNewId[oldId] = newCarId;
+        }
       }
     }
-    if (data['entries'] != null) {
-      for (var e in data['entries']) {
-        await DatabaseHelper.instance.insertEntry(FuelEntry.fromMap(e));
+    
+    // Import entries with mapped car IDs
+    if (data['entries'] != null && data['entries'] is List) {
+      final oldEntries = data['entries'] as List;
+      
+      for (var e in oldEntries) {
+        final entryMap = Map<String, dynamic>.from(e);
+        final oldCarId = entryMap['car_id'];
+        
+        // Map to new car ID
+        if (oldCarId != null && oldIdToNewId.containsKey(oldCarId)) {
+          entryMap['car_id'] = oldIdToNewId[oldCarId];
+          entryMap.remove('id'); // Let DB assign new ID
+          
+          await DatabaseHelper.instance.insertEntry(FuelEntry.fromMap(entryMap));
+        }
       }
     }
+    
     await initializeApp();
     _setLoading(false);
   }

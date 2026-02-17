@@ -1,12 +1,12 @@
-# LAATST BIJGEWERKT: 2026-02-14 08:15 UTC
-# WIJZIGING: Camera packages verwijderd (camera, google_mlkit_text_recognition, permission_handler)
-# REDEN: Nothing Phone camera bugs - feature volledig verwijderd
+# LAATST BIJGEWERKT: 2026-02-17 00:00 UTC
+# WIJZIGING: Dashboard redesign - swipeable cards, distance/consumption chart, 2-column legend
+# REDEN: Major UX improvements - new layout, fixed animations, better stats visualization
 
 name: mijn_tank_app
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

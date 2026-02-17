@@ -1,16 +1,19 @@
-// LAATST BIJGEWERKT: 2026-02-14 08:15 UTC
-// WIJZIGING: Camera scan knop verwijderd, alleen RDW lookup behouden
-// REDEN: Nothing Phone camera crashes - te instabiel voor productie
+// LAATST BIJGEWERKT: 2026-02-15 20:30 UTC
+// WIJZIGING: Removed progress dialogs (crashy), using SnackBars instead
+// REDEN: Nothing Phone widget lifecycle issues with dialogs
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../data_provider.dart';
 import '../services/data_service.dart';
 import '../services/rdw_service.dart';
+import '../services/database_importer.dart';
 import '../models/car.dart';
 import '../models/fuel_entry.dart';
 import '../widgets/pole_position_game.dart';
+import '../widgets/migration_dialog.dart';
 import 'developer_notes_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -23,7 +26,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _nameController;
   final List<String> _vehicleTypes = ['Auto', 'Motor', 'Vrachtwagen', 'Scooter', 'Bus', 'Camper', 'Tractor', 'Bestelwagen'];
-  final String _version = "v1.0.6 (Beta)";
+  final String _version = "v1.1.0 (Beta)";
   
   // Easter Egg activation
   int _versionTapCount = 0;
@@ -316,8 +319,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('TankAppie Backup (JSON)'),
             onTap: () async {
               Navigator.pop(context);
+              
+              // Pick JSON file
               final content = await DataService.pickFile(['json']);
-              if (content != null) provider.importJsonBackup(content);
+              if (content == null) return;
+              
+              try {
+                final json = jsonDecode(content) as Map<String, dynamic>;
+                
+                // Analyze for migration needs
+                final analysis = DatabaseImporter.analyzeJson(json);
+                
+                // Auto RDW fill if needed (silent - no UI feedback)
+                if (analysis.needsMigration) {
+                  print('⚠️ Oude backup - auto RDW fill starting...');
+                  
+                  // Silent RDW fill
+                  final migratedCars = await DatabaseImporter.fillFromRdw(
+                    analysis.carsData,
+                    null, // No progress
+                  );
+                  
+                  print('✓ RDW fill complete: ${migratedCars.length} cars');
+                  json['cars'] = migratedCars.map((c) => c.toMap()).toList();
+                }
+                
+                // Import to database
+                print('Starting database import...');
+                provider.importJsonBackup(jsonEncode(json));
+                print('✓ Import complete!');
+                
+              } catch (e) {
+                print('❌ Import error: $e');
+              }
             },
           ),
           ListTile(
@@ -691,7 +725,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Handmatig gegevens invoeren'),
                   value: manualMode,
-                  activeColor: color,
+                  activeTrackColor: color,
                   onChanged: (value) => setDialogState(() => manualMode = value),
                 ),
                 
@@ -699,7 +733,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (manualMode) ...[
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: selectedType,
+                    initialValue: selectedType,
                     decoration: const InputDecoration(labelText: 'Type Voertuig'),
                     items: _vehicleTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                     onChanged: (v) => setDialogState(() => selectedType = v!),
