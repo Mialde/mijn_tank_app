@@ -34,7 +34,7 @@ class _SwipeableStatsCardsState extends State<SwipeableStatsCards> {
         // Swipeable cards with intrinsic height
         IntrinsicHeight(
           child: SizedBox(
-            height: 600, // Max height - cards can be smaller
+            height: 700, // Increased to accommodate larger cards
             child: PageView(
               controller: _pageController,
               onPageChanged: (index) {

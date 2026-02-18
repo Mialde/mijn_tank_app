@@ -1,6 +1,6 @@
-// LAATST BIJGEWERKT: 2026-02-16 22:15 UTC
-// WIJZIGING: New layout with fixed distance/consumption card and swipeable stats cards
-// REDEN: Improved dashboard UX with multiple stat views
+// LAATST BIJGEWERKT: 2026-02-18 23:00 UTC
+// WIJZIGING: Added all 5 cards with visibility toggle + debug logging
+// REDEN: Complete dashboard with card management
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,9 +10,15 @@ import 'package:intl/intl.dart';
 import '../data_provider.dart';
 import '../models/time_period.dart';
 import '../models/stat_item.dart';
+import '../models/card_config.dart';
 import '../widgets/apk_warning_banner.dart';
 import '../widgets/distance_consumption_card.dart';
 import '../widgets/swipeable_stats_cards.dart';
+import '../widgets/price_tracker_card.dart';
+import '../widgets/efficiency_monitor_card.dart';
+import '../widgets/cost_per_km_card.dart';
+import '../widgets/timeline_heatmap_card.dart';
+import '../widgets/card_visibility_selector.dart';
 import 'history_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -23,10 +29,18 @@ class DashboardScreen extends StatelessWidget {
     final provider = context.watch<DataProvider>();
     final appColor = provider.themeColor;
     final selectedCar = provider.selectedCar;
-    final apk = provider.apkStatus;
-    
-    final bool showBanner = apk['show'] == true;
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // DEBUG LOGGING
+    debugPrint('🔍 DASHBOARD DEBUG:');
+    debugPrint('   📊 Entries: ${provider.entries.length}');
+    debugPrint('   🚗 Selected car: ${selectedCar?.name ?? "NONE"}');
+    debugPrint('   🔧 Maintenance: ${provider.maintenanceEntries.length}');
+    debugPrint('   🎴 Visible cards: ${provider.visibleCards.where((c) => c.isVisible).length}');
+    if (provider.entries.isNotEmpty) {
+      debugPrint('   ⛽ First entry: ${provider.entries.first.pricePerLiter} €/L on ${provider.entries.first.date}');
+      debugPrint('   ⛽ Last entry: ${provider.entries.last.pricePerLiter} €/L on ${provider.entries.last.date}');
+    }
 
     if (provider.isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (selectedCar == null) return const Scaffold(body: Center(child: Text("Selecteer eerst een voertuig.")));
@@ -53,12 +67,10 @@ class DashboardScreen extends StatelessWidget {
           statusBarBrightness: isDarkMode ? Brightness.dark : Brightness.light,
         ),
         actions: [
-          // Geschiedenis: Neutraal thema
           IconButton(
             icon: const Icon(Icons.history, size: 24), 
             onPressed: () => _showHistoryModal(context)
           ),
-          // Autoselectie: Accentkleur
           if (provider.cars.length > 1)
             IconButton(
               icon: Icon(Icons.directions_car, color: appColor, size: 24), 
@@ -71,32 +83,71 @@ class DashboardScreen extends StatelessWidget {
         child: Column(
           children: [
             const ApkWarningBanner(),
-            
-            // Fixed top card: Distance & Consumption
             const DistanceConsumptionCard(),
-            
             const SizedBox(height: 16),
             
-            // Swipeable stats cards
+            // Swipeable stats cards with long-press to configure
             SwipeableStatsCards(
-              cards: [
-                // Card 1: Kosten Overzicht (existing)
-                _buildCostsCard(context, provider, appColor, isDarkMode, statItems, totalAmount, selectedIndex, holeRadius, mainThickness, gapWidth, ringThickness),
-                
-                // Card 2: Placeholder - Gemiddelde kosten per dag
-                _buildPlaceholderCard(context, "GEMIDDELDE KOSTEN", "Per dag", isDarkMode),
-                
-                // Card 3: Placeholder - Kosten per liter
-                _buildPlaceholderCard(context, "KOSTEN PER LITER", "Trend", isDarkMode),
-                
-                // Card 4: Placeholder - Andere grafiek
-                _buildPlaceholderCard(context, "EXTRA STATISTIEKEN", "Coming soon", isDarkMode),
-              ],
+              cards: _buildVisibleCards(context, provider, appColor, isDarkMode, statItems, totalAmount, selectedIndex, holeRadius, mainThickness, gapWidth, ringThickness),
             ),
           ],
         ),
       ),
     );
+  }
+  
+  List<Widget> _buildVisibleCards(
+    BuildContext context,
+    DataProvider provider,
+    Color appColor,
+    bool isDarkMode,
+    List<StatItem> statItems,
+    double totalAmount,
+    int selectedIndex,
+    double holeRadius,
+    double mainThickness,
+    double gapWidth,
+    double ringThickness,
+  ) {
+    final cards = <Widget>[];
+    
+    debugPrint('🎴 Building cards...');
+    for (final config in provider.visibleCards) {
+      debugPrint('   - ${config.title}: ${config.isVisible ? "✅" : "❌"}');
+      
+      if (!config.isVisible) continue;
+      
+      Widget card;
+      switch (config.id) {
+        case 'costs_overview':
+          card = _buildCostsCard(context, provider, appColor, isDarkMode, statItems, totalAmount, selectedIndex, holeRadius, mainThickness, gapWidth, ringThickness);
+          break;
+        case 'price_tracker':
+          card = PriceTrackerCard(appColor: appColor, isDarkMode: isDarkMode);
+          break;
+        case 'efficiency_monitor':
+          card = EfficiencyMonitorCard(appColor: appColor, isDarkMode: isDarkMode);
+          break;
+        case 'cost_per_km':
+          card = CostPerKmCard(appColor: appColor, isDarkMode: isDarkMode);
+          break;
+        case 'timeline_heatmap':
+          card = TimelineHeatmapCard(appColor: appColor, isDarkMode: isDarkMode);
+          break;
+        default:
+          continue;
+      }
+      
+      cards.add(
+        GestureDetector(
+          onLongPress: () => _showCardVisibilitySelector(context, provider),
+          child: card,
+        ),
+      );
+    }
+    
+    debugPrint('   📦 Total visible cards: ${cards.length}');
+    return cards;
   }
 
   Widget _buildCostsCard(
@@ -114,22 +165,19 @@ class DashboardScreen extends StatelessWidget {
   ) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Container(
-        decoration: BoxDecoration(
+      child: SizedBox(
+        height: 649,
+        child: Material(
           color: Theme.of(context).cardTheme.color,
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05), 
-              blurRadius: 20, 
-              offset: const Offset(0, 5)
-            )
-          ],
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          elevation: 4,
+          shadowColor: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05),
+          child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -144,10 +192,10 @@ class DashboardScreen extends StatelessWidget {
                 _buildCompactSelector(context, provider, appColor),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
 
             SizedBox(
-              height: 320,
+              height: 280,
               child: statItems.isEmpty 
                 ? const Center(child: Text("Geen data."))
                 : Stack(
@@ -176,96 +224,58 @@ class DashboardScreen extends StatelessWidget {
                       ),
 
                       RepaintBoundary(
-                        child: DefaultTextStyle(
-                          style: const TextStyle(),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                DefaultTextStyle.merge(
-                                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, height: 1.2),
-                                  child: Text(
-                                    NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 0).format(totalAmount),
-                                    textAlign: TextAlign.center,
-                                  ),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 0).format(totalAmount),
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.2,
+                                  color: Theme.of(context).textTheme.bodyLarge?.color,
                                 ),
-                                // Always render subtitle space to prevent layout shift
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: DefaultTextStyle.merge(
-                                    style: TextStyle(color: Theme.of(context).hintColor, fontSize: 13, height: 1.2),
-                                    child: Text(
-                                      selectedIndex != -1 && selectedIndex < statItems.length
-                                          ? _getLegendTitle(statItems[selectedIndex], provider.selectedPeriod)
-                                          : '', // Empty string maintains layout
-                                      key: ValueKey('subtitle_${selectedIndex}_${provider.selectedPeriod}'), // Force instant rebuild
-                                      textAlign: TextAlign.center,
-                                    ),
+                                textAlign: TextAlign.center,
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  selectedIndex != -1 && selectedIndex < statItems.length
+                                      ? _getLegendTitle(statItems[selectedIndex], provider.selectedPeriod)
+                                      : '',
+                                  key: ValueKey('subtitle_${selectedIndex}_${provider.selectedPeriod}'),
+                                  style: TextStyle(
+                                    color: Theme.of(context).hintColor,
+                                    fontSize: 13,
+                                    height: 1.2,
                                   ),
+                                  textAlign: TextAlign.center,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ],
                   ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 4),
 
-            if (statItems.isNotEmpty) ..._buildLegend(context, provider, statItems, selectedIndex),
+            if (statItems.isNotEmpty) ...[
+              ClipRRect(
+                child: SizedBox(
+                  height: 277,
+                  child: _buildLegendGrid(context, provider, statItems, selectedIndex),
+                ),
+              ),
+            ],
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildPlaceholderCard(BuildContext context, String title, String subtitle, bool isDarkMode) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05),
-              blurRadius: 20,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).hintColor,
-                letterSpacing: 1.0,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Icon(
-              Icons.auto_graph,
-              size: 80,
-              color: Colors.grey.withValues(alpha: 0.3),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: Theme.of(context).hintColor,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-      ),
+    ),
+    ),
     );
   }
 
@@ -326,114 +336,94 @@ class DashboardScreen extends StatelessWidget {
     ));
   }
 
-  List<Widget> _buildLegend(BuildContext context, DataProvider provider, List<StatItem> items, int selectedIndex) {
-    // Split into 2 columns: max 8 left, rest right
-    final leftItems = items.take(8).toList();
-    final rightItems = items.length > 8 ? items.skip(8).toList() : <StatItem>[];
+  Widget _buildLegendGrid(BuildContext context, DataProvider provider, List<StatItem> items, int selectedIndex) {
+    final leftItems = <MapEntry<int, StatItem>>[];
+    final rightItems = <MapEntry<int, StatItem>>[];
     
-    return [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Left column
-          Expanded(
-            child: Column(
-              children: leftItems.asMap().entries.map((entry) {
-                final i = entry.key;
-                final item = entry.value;
-                final isSelected = i == selectedIndex;
-                final String displayTitle = _getLegendTitle(item, provider.selectedPeriod);
+    for (int i = 0; i < items.length && i < 16; i++) {
+      if (i % 2 == 0) {
+        leftItems.add(MapEntry(i, items[i]));
+      } else {
+        rightItems.add(MapEntry(i, items[i]));
+      }
+    }
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: InkWell(
-                    onTap: () => provider.setSelectedIndex(i),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected ? item.color.withValues(alpha: 0.1) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 12, height: 6, 
-                            decoration: BoxDecoration(color: item.color, borderRadius: BorderRadius.circular(3))
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              displayTitle, 
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Text(
-                            '${item.percentage.toStringAsFixed(1)}%', 
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10)
-                          ),
-                        ],
-                      ),
-                    ),
+    Widget buildItem(int i, StatItem item) {
+      final isSelected = i == selectedIndex;
+      final String displayTitle = _getLegendTitle(item, provider.selectedPeriod);
+      return SizedBox(
+        height: 30,
+        child: InkWell(
+          onTap: () => provider.setSelectedIndex(i),
+          borderRadius: BorderRadius.circular(8),
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: isSelected ? item.color.withValues(alpha: 0.1) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 10, height: 5, 
+                  decoration: BoxDecoration(color: item.color, borderRadius: BorderRadius.circular(3))
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    displayTitle, 
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                );
-              }).toList(),
+                ),
+                Text(
+                  '${item.percentage.toStringAsFixed(1)}%', 
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)
+                ),
+              ],
             ),
           ),
-          
-          // Right column (if needed)
-          if (rightItems.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                children: rightItems.asMap().entries.map((entry) {
-                  final i = entry.key + 8; // Offset index
-                  final item = entry.value;
-                  final isSelected = i == selectedIndex;
-                  final String displayTitle = _getLegendTitle(item, provider.selectedPeriod);
+        ),
+      );
+    }
 
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: InkWell(
-                      onTap: () => provider.setSelectedIndex(i),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: isSelected ? item.color.withValues(alpha: 0.1) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 12, height: 6, 
-                              decoration: BoxDecoration(color: item.color, borderRadius: BorderRadius.circular(3))
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                displayTitle, 
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Text(
-                              '${item.percentage.toStringAsFixed(1)}%', 
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10)
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-        ],
-      ),
-    ];
+    return Container(
+      color: Colors.transparent,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+        Expanded(
+          child: Column(
+            children: leftItems.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: buildItem(e.key, e.value),
+            )).toList(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            children: rightItems.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: buildItem(e.key, e.value),
+            )).toList(),
+          ),
+        ),
+      ],
+    ),
+    );
+  }
+
+  void _showCardVisibilitySelector(BuildContext context, DataProvider provider) {
+    showCardVisibilitySelector(
+      context: context,
+      cards: provider.visibleCards,
+      onSave: (cards) {
+        provider.updateCardVisibility(cards);
+      },
+    );
   }
 
   void _showHistoryModal(BuildContext context) {

@@ -10,6 +10,7 @@ import 'models/developer_note.dart';
 import 'models/maintenance_entry.dart';
 import 'models/stat_item.dart';
 import 'models/time_period.dart';
+import 'models/card_config.dart';
 import 'services/database_helper.dart';
 
 class DataProvider with ChangeNotifier {
@@ -25,6 +26,9 @@ class DataProvider with ChangeNotifier {
 
   TimePeriod _selectedPeriod = TimePeriod.oneMonth;
   int _selectedIndex = -1;
+  
+  // Card visibility state
+  List<DashboardCardConfig> _visibleCards = DashboardCards.allCards;
 
   static const Map<String, Color> colorOptions = {
     'Mint': Color(0xFF00D09E), 'Blauw': Color(0xFF2979FF), 'Rood': Color(0xFFFF5252),
@@ -44,6 +48,13 @@ class DataProvider with ChangeNotifier {
   Color get themeColor => colorOptions[_settings?.accentColor] ?? const Color(0xFF00D09E);
   TimePeriod get selectedPeriod => _selectedPeriod;
   int get selectedIndex => _selectedIndex;
+  List<DashboardCardConfig> get visibleCards => _visibleCards;
+  
+  void updateCardVisibility(List<DashboardCardConfig> cards) {
+    _visibleCards = cards;
+    notifyListeners();
+    // TODO: Save to database/shared preferences for persistence
+  }
 
   Future<void> initializeApp() async {
     _setLoading(true);
