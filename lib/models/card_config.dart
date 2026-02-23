@@ -1,24 +1,32 @@
-// Card configuration model for showing/hiding dashboard cards
+// Card configuration model - SIMPLIFIED: XL (100%) and M (50%) only
+
+enum CardSize { xl, m }
 
 class DashboardCardConfig {
   final String id;
   final String title;
   final String subtitle;
   final bool isVisible;
+  final CardSize size;
   
   const DashboardCardConfig({
     required this.id,
     required this.title,
     required this.subtitle,
     this.isVisible = true,
+    this.size = CardSize.xl,
   });
   
-  DashboardCardConfig copyWith({bool? isVisible}) {
+  DashboardCardConfig copyWith({
+    bool? isVisible,
+    CardSize? size,
+  }) {
     return DashboardCardConfig(
       id: id,
       title: title,
       subtitle: subtitle,
       isVisible: isVisible ?? this.isVisible,
+      size: size ?? this.size,
     );
   }
   
@@ -28,6 +36,7 @@ class DashboardCardConfig {
       'title': title,
       'subtitle': subtitle,
       'isVisible': isVisible ? 1 : 0,
+      'size': size.name,
     };
   }
   
@@ -37,12 +46,32 @@ class DashboardCardConfig {
       title: map['title'],
       subtitle: map['subtitle'],
       isVisible: map['isVisible'] == 1,
+      size: CardSize.values.firstWhere(
+        (s) => s.name == map['size'],
+        orElse: () => CardSize.xl,
+      ),
     );
+  }
+  
+  // Get width percentage for this size
+  double get widthPercentage {
+    switch (size) {
+      case CardSize.xl:
+        return 1.0; // 100%
+      case CardSize.m:
+        return 0.5; // 50%
+    }
   }
 }
 
-// Predefined cards
+// Predefined cards - all support XL and M
 class DashboardCards {
+  static const distance = DashboardCardConfig(
+    id: 'distance_consumption',
+    title: 'Afstand & Verbruik',
+    subtitle: 'Gereden kilometers en verbruik',
+  );
+  
   static const costs = DashboardCardConfig(
     id: 'costs_overview',
     title: 'Kosten Overzicht',
@@ -74,6 +103,7 @@ class DashboardCards {
   );
   
   static List<DashboardCardConfig> get allCards => [
+    distance,
     costs,
     priceTracker,
     efficiency,

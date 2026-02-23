@@ -65,9 +65,7 @@ class CostPerKmCard extends StatelessWidget {
     // Build stacked line data
     final trendData = _buildTrendData(sortedEntries, maintenanceEntries, car, yearsElapsed, totalKm);
     
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Material(
+    return Material(
         color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(24),
         elevation: 4,
@@ -305,7 +303,6 @@ class CostPerKmCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
       ),
     );
   }
@@ -380,9 +377,7 @@ class CostPerKmCard extends StatelessWidget {
   }
   
   Widget _buildEmptyState(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Material(
+    return Material(
         color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(24),
         elevation: 4,
@@ -421,7 +416,6 @@ class CostPerKmCard extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
   

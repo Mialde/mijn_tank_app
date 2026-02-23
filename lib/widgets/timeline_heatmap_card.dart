@@ -104,9 +104,7 @@ class _TimelineHeatmapCardState extends State<TimelineHeatmapCard> {
     
     final daysSinceLastFill = DateTime.now().difference(sortedEntries.last.date).inDays;
     
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Material(
+    return Material(
         color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(24),
         elevation: 4,
@@ -249,14 +247,11 @@ class _TimelineHeatmapCardState extends State<TimelineHeatmapCard> {
             ],
           ),
         ),
-      ),
     );
   }
   
   Widget _buildEmptyState(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Material(
+    return Material(
         color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(24),
         elevation: 4,
@@ -295,7 +290,6 @@ class _TimelineHeatmapCardState extends State<TimelineHeatmapCard> {
             ),
           ),
         ),
-      ),
     );
   }
   

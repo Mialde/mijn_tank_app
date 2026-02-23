@@ -17,7 +17,7 @@ dependencies:
   # DIT IS DE ONTBREKENDE SCHAKEL:
   flutter_localizations:
     sdk: flutter
-
+  shared_preferences: ^2.2.2
   provider: ^6.1.1
   intl: ^0.20.2
   sqflite: ^2.3.0

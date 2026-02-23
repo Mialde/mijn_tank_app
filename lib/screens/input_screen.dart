@@ -276,12 +276,39 @@ class _InputScreenState extends State<InputScreen> {
 
   void _saveEntry(DataProvider provider) {
     if (provider.selectedCar == null) return;
+    
+    // Validation
+    final odometer = double.tryParse(_odoController.text.replaceAll(',', '.')) ?? 0;
+    final liters = double.tryParse(_literController.text.replaceAll(',', '.')) ?? 0;
+    final priceTotal = double.tryParse(_priceController.text.replaceAll(',', '.')) ?? 0;
+    
+    if (odometer <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Voer een geldige kilometerstand in'))
+      );
+      return;
+    }
+    
+    if (liters <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Voer een geldig aantal liters in'))
+      );
+      return;
+    }
+    
+    if (priceTotal <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Voer een geldig bedrag in'))
+      );
+      return;
+    }
+    
     final entry = FuelEntry(
       carId: provider.selectedCar!.id!,
       date: _selectedDate,
-      odometer: double.tryParse(_odoController.text.replaceAll(',', '.')) ?? 0,
-      liters: double.tryParse(_literController.text.replaceAll(',', '.')) ?? 0,
-      priceTotal: double.tryParse(_priceController.text.replaceAll(',', '.')) ?? 0,
+      odometer: odometer,
+      liters: liters,
+      priceTotal: priceTotal,
       pricePerLiter: 0,
     );
     provider.addFuelEntry(entry);

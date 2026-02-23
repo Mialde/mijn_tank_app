@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:collection/collection.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'models/car.dart';
 import 'models/fuel_entry.dart';
 import 'models/user_settings.dart';
@@ -50,10 +51,20 @@ class DataProvider with ChangeNotifier {
   int get selectedIndex => _selectedIndex;
   List<DashboardCardConfig> get visibleCards => _visibleCards;
   
-  void updateCardVisibility(List<DashboardCardConfig> cards) {
+  Future<void> updateCardVisibility(List<DashboardCardConfig> cards) async {
     _visibleCards = cards;
     notifyListeners();
-    // TODO: Save to database/shared preferences for persistence
+    await _saveCardConfig();
+  }
+  
+  Future<void> reorderCards(int oldIndex, int newIndex) async {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final card = _visibleCards.removeAt(oldIndex);
+    _visibleCards.insert(newIndex, card);
+    notifyListeners();
+    await _saveCardConfig();
   }
 
   Future<void> initializeApp() async {
@@ -61,6 +72,7 @@ class DataProvider with ChangeNotifier {
     _settings = await DatabaseHelper.instance.getSettings();
     _cars = await DatabaseHelper.instance.getAllCars();
     _notes = await DatabaseHelper.instance.getAllNotes();
+    await _loadCardConfig();
     
     // Auto selectie logica
     if (_cars.isNotEmpty) {
@@ -388,5 +400,72 @@ class DataProvider with ChangeNotifier {
     
     await initializeApp();
     _setLoading(false);
+  }
+
+  // ============ CARD CONFIG PERSISTENCE WITH SIZE ============
+  
+  Future<void> _saveCardConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cardData = _visibleCards.map((c) => {
+        'id': c.id,
+        'isVisible': c.isVisible,
+        'size': c.size.name, // Save size!
+      }).toList();
+      await prefs.setString('dashboard_cards', jsonEncode(cardData));
+      debugPrint('💾 Saved card config with sizes');
+    } catch (e) {
+      debugPrint('❌ Error saving card config: $e');
+    }
+  }
+  
+  Future<void> _loadCardConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cardDataString = prefs.getString('dashboard_cards');
+      
+      if (cardDataString != null) {
+        final List<dynamic> cardData = jsonDecode(cardDataString);
+        final Map<String, bool> visibilityMap = {};
+        final Map<String, CardSize> sizeMap = {};
+        final List<String> orderList = [];
+        
+        for (var item in cardData) {
+          final id = item['id'] as String;
+          orderList.add(id);
+          visibilityMap[id] = item['isVisible'] as bool;
+          
+          // Load size (default to XL if not found)
+          final sizeString = item['size'] as String?;
+          sizeMap[id] = CardSize.values.firstWhere(
+            (s) => s.name == sizeString,
+            orElse: () => CardSize.xl,
+          );
+        }
+        
+        final reorderedCards = <DashboardCardConfig>[];
+        for (var id in orderList) {
+          final card = DashboardCards.allCards.firstWhereOrNull((c) => c.id == id);
+          if (card != null) {
+            reorderedCards.add(card.copyWith(
+              isVisible: visibilityMap[id],
+              size: sizeMap[id],
+            ));
+          }
+        }
+        
+        // Add new cards not in saved config
+        for (var card in DashboardCards.allCards) {
+          if (!orderList.contains(card.id)) {
+            reorderedCards.add(card);
+          }
+        }
+        
+        _visibleCards = reorderedCards;
+        debugPrint('📂 Loaded ${_visibleCards.length} cards with sizes');
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading card config: $e');
+    }
   }
 }

@@ -72,9 +72,7 @@ class PriceTrackerCard extends StatelessWidget {
     final avgTankSize = validEntries.map((e) => e.liters).reduce((a, b) => a + b) / validEntries.length;
     final savings = (maxPrice - avgPrice) * avgTankSize;
     
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Material(
+    return Material(
         color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(24),
         elevation: 4,
@@ -273,14 +271,11 @@ class PriceTrackerCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
   
   Widget _buildEmptyState(BuildContext context, {String? customMessage}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Material(
+    return Material(
         color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(24),
         elevation: 4,
@@ -322,7 +317,6 @@ class PriceTrackerCard extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
   
