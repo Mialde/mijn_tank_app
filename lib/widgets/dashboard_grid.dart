@@ -20,8 +20,12 @@ class DashboardGrid extends StatelessWidget {
     
     final rows = _buildRows();
     
-    return Column(
-      children: rows.map((row) => _buildRow(row)).toList(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
+          children: rows.map((row) => _buildRow(row, constraints.maxWidth)).toList(),
+        );
+      },
     );
   }
   
@@ -59,7 +63,7 @@ class DashboardGrid extends StatelessWidget {
     return rows;
   }
   
-  Widget _buildRow(List<int> cardIndices) {
+  Widget _buildRow(List<int> cardIndices, double maxWidth) {
     if (cardIndices.isEmpty) return const SizedBox.shrink();
     
     return Padding(
@@ -70,12 +74,12 @@ class DashboardGrid extends StatelessWidget {
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: _buildRowCards(cardIndices),
+        children: _buildRowCards(cardIndices, maxWidth - 48), // maxWidth minus side padding
       ),
     );
   }
   
-  List<Widget> _buildRowCards(List<int> cardIndices) {
+  List<Widget> _buildRowCards(List<int> cardIndices, double availableWidth) {
     final widgets = <Widget>[];
     
     for (int idx = 0; idx < cardIndices.length; idx++) {
@@ -84,20 +88,41 @@ class DashboardGrid extends StatelessWidget {
       final card = cards[i];
       final isLast = idx == cardIndices.length - 1;
       
-      // Calculate flex based on width percentage
-      final flex = (config.widthPercentage * 100).toInt();
-      
-      widgets.add(
-        Expanded(
-          flex: flex,
-          child: card,
-        ),
-      );
+      // For M-size cards, use fixed width instead of Expanded
+      if (config.widthPercentage == 0.5) {
+        // Calculate exact M card width: (available - gaps) / 2
+        final gapsWidth = 16.0; // one gap for 2 cards
+        final cardWidth = (availableWidth - gapsWidth) / 2;
+        
+        widgets.add(
+          SizedBox(
+            width: cardWidth,
+            child: card,
+          ),
+        );
+      } else {
+        // XL card gets full available width
+        widgets.add(
+          Expanded(
+            child: card,
+          ),
+        );
+      }
       
       // Add gap between cards (but not after last card)
       if (!isLast) {
         widgets.add(const SizedBox(width: 16));
       }
+    }
+    
+    // If row doesn't fill 100%, add spacer to keep cards left-aligned
+    final totalWidth = cardIndices.fold<double>(
+      0, 
+      (sum, i) => sum + configs[i].widthPercentage,
+    );
+    
+    if (totalWidth < 1.0) {
+      widgets.add(const Spacer());
     }
     
     return widgets;

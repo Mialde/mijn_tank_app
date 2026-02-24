@@ -127,26 +127,26 @@ class _DistanceConsumptionCardState extends State<DistanceConsumptionCard> {
             ),
           ],
         ),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.route, color: appColor, size: 48),
-            const SizedBox(height: 16),
+            Icon(Icons.route, color: appColor, size: 40),
+            const SizedBox(height: 12),
             Text(
               NumberFormat('#,###', 'nl_NL').format(displayValue.round()),
               style: TextStyle(
-                fontSize: 32,
+                fontSize: 28,
                 fontWeight: FontWeight.bold,
                 color: appColor,
                 height: 1.0,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               displayLabel,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 10,
                 color: Theme.of(context).hintColor,
               ),
             ),
@@ -200,7 +200,7 @@ class _DistanceConsumptionCardState extends State<DistanceConsumptionCard> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             color: isSelected
                 ? (isDarkMode ? Colors.white : Colors.black)
@@ -213,20 +213,23 @@ class _DistanceConsumptionCardState extends State<DistanceConsumptionCard> {
             children: [
               Icon(
                 icon,
-                size: 14,
+                size: 12,
                 color: isSelected
                     ? (isDarkMode ? Colors.black : Colors.white)
                     : Theme.of(context).hintColor,
               ),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: isSelected
-                      ? (isDarkMode ? Colors.black : Colors.white)
-                      : Theme.of(context).hintColor,
+              const SizedBox(width: 3),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected
+                        ? (isDarkMode ? Colors.black : Colors.white)
+                        : Theme.of(context).hintColor,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],

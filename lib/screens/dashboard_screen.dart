@@ -109,7 +109,7 @@ class DashboardScreen extends StatelessWidget {
           break;
           
         case 'price_tracker':
-          card = PriceTrackerCard(appColor: appColor, isDarkMode: isDarkMode);
+          card = PriceTrackerCard(size: config.size);
           break;
           
         case 'efficiency_monitor':
