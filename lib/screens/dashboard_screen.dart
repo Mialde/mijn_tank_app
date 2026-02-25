@@ -113,15 +113,15 @@ class DashboardScreen extends StatelessWidget {
           break;
           
         case 'efficiency_monitor':
-          card = EfficiencyMonitorCard(appColor: appColor, isDarkMode: isDarkMode);
+          card = EfficiencyMonitorCard(size: config.size);
           break;
           
         case 'cost_per_km':
-          card = CostPerKmCard(appColor: appColor, isDarkMode: isDarkMode);
+          card = CostPerKmCard(size: config.size);
           break;
           
         case 'timeline_heatmap':
-          card = TimelineHeatmapCard(appColor: appColor, isDarkMode: isDarkMode);
+          card = TimelineHeatmapCard(size: config.size);
           break;
           
         default:
