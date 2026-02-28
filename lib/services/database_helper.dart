@@ -5,6 +5,7 @@ import '../models/fuel_entry.dart';
 import '../models/user_settings.dart';
 import '../models/developer_note.dart';
 import '../models/maintenance_entry.dart';
+import '../models/recurring_cost.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -24,7 +25,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3, // Versie verhoogd voor nieuwe velden
+      version: 4, // Versie verhoogd voor recurring_costs tabel
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -55,6 +56,11 @@ class DatabaseHelper {
       }
     }
     
+    if (oldVersion < 4) {
+      print('Adding recurring_costs table...');
+      await _createRecurringCostsTable(db);
+    }
+    
     print('Database upgrade complete!');
   }
 
@@ -69,6 +75,7 @@ class DatabaseHelper {
     await db.execute('CREATE TABLE IF NOT EXISTS user_settings (id $idType, first_name $textType, theme_mode $textType, accent_color $textType, use_greeting $intType, show_quotes $intType)');
     await db.execute('CREATE TABLE IF NOT EXISTS developer_notes (id $idType, content $textType, date $textType, is_completed $intType)');
     await _createMaintenanceTable(db);
+    await _createRecurringCostsTable(db);
   }
 
   Future _createMaintenanceTable(Database db) async {
@@ -81,6 +88,21 @@ class DatabaseHelper {
         type TEXT,
         description TEXT,
         cost REAL,
+        FOREIGN KEY (car_id) REFERENCES cars (id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  Future _createRecurringCostsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS recurring_costs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        car_id INTEGER,
+        name TEXT,
+        amount REAL,
+        frequency TEXT,
+        description TEXT,
+        is_active INTEGER,
         FOREIGN KEY (car_id) REFERENCES cars (id) ON DELETE CASCADE
       )
     ''');
@@ -132,6 +154,34 @@ class DatabaseHelper {
   Future<int> updateMaintenance(MaintenanceEntry entry) async { final db = await database; return await db.update('maintenance', entry.toMap(), where: 'id = ?', whereArgs: [entry.id]); }
   Future<int> deleteMaintenance(int id) async { final db = await database; return await db.delete('maintenance', where: 'id = ?', whereArgs: [id]); }
 
+  // --- RECURRING COSTS ---
+  Future<int> insertRecurringCost(RecurringCost cost) async { 
+    final db = await database; 
+    return await db.insert('recurring_costs', cost.toMap()); 
+  }
+  
+  Future<List<RecurringCost>> getRecurringCostsByCar(int carId) async { 
+    final db = await database; 
+    final result = await db.query('recurring_costs', where: 'car_id = ?', whereArgs: [carId], orderBy: 'name ASC'); 
+    return result.map((json) => RecurringCost.fromMap(json)).toList(); 
+  }
+  
+  Future<List<RecurringCost>> getActiveRecurringCostsByCar(int carId) async { 
+    final db = await database; 
+    final result = await db.query('recurring_costs', where: 'car_id = ? AND is_active = 1', whereArgs: [carId], orderBy: 'name ASC'); 
+    return result.map((json) => RecurringCost.fromMap(json)).toList(); 
+  }
+  
+  Future<int> updateRecurringCost(RecurringCost cost) async { 
+    final db = await database; 
+    return await db.update('recurring_costs', cost.toMap(), where: 'id = ?', whereArgs: [cost.id]); 
+  }
+  
+  Future<int> deleteRecurringCost(int id) async { 
+    final db = await database; 
+    return await db.delete('recurring_costs', where: 'id = ?', whereArgs: [id]); 
+  }
+
   // --- NOTES ---
   Future<int> insertNote(DeveloperNote note) async { final db = await database; return await db.insert('developer_notes', note.toMap()); }
   Future<List<DeveloperNote>> getAllNotes() async { final db = await database; final result = await db.query('developer_notes', orderBy: 'is_completed ASC, date DESC'); return result.map((json) => DeveloperNote.fromMap(json)).toList(); }
@@ -153,6 +203,7 @@ class DatabaseHelper {
       await txn.delete('entries');
       await txn.delete('cars');
       await txn.delete('maintenance');
+      await txn.delete('recurring_costs');
       await txn.delete('developer_notes');
       await txn.delete('user_settings');
     });

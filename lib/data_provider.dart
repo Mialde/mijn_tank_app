@@ -9,6 +9,7 @@ import 'models/fuel_entry.dart';
 import 'models/user_settings.dart';
 import 'models/developer_note.dart';
 import 'models/maintenance_entry.dart';
+import 'models/recurring_cost.dart';
 import 'models/stat_item.dart';
 import 'models/time_period.dart';
 import 'models/card_config.dart';
@@ -18,6 +19,7 @@ class DataProvider with ChangeNotifier {
   List<Car> _cars = [];
   List<FuelEntry> _entries = [];
   List<MaintenanceEntry> _maintenanceEntries = [];
+  List<RecurringCost> _recurringCosts = [];
   List<DeveloperNote> _notes = [];
   Car? _selectedCar;
   UserSettings? _settings;
@@ -41,6 +43,7 @@ class DataProvider with ChangeNotifier {
   List<Car> get cars => _cars;
   List<FuelEntry> get entries => _entries;
   List<MaintenanceEntry> get maintenanceEntries => _maintenanceEntries;
+  List<RecurringCost> get recurringCosts => _recurringCosts;
   List<DeveloperNote> get notes => _notes;
   Car? get selectedCar => _selectedCar;
   UserSettings? get settings => _settings;
@@ -81,6 +84,7 @@ class DataProvider with ChangeNotifier {
       print('✓ Auto geselecteerd: ${_selectedCar!.name} (${_selectedCar!.licensePlate})');
       await fetchEntries();
       await fetchMaintenance();
+      await fetchRecurringCosts(); // Now enabled with database v4
     } else {
       print('⚠ Geen auto\'s gevonden in database');
       _selectedCar = null;
@@ -105,6 +109,7 @@ class DataProvider with ChangeNotifier {
 
   Future<void> fetchEntries() async { if (_selectedCar != null) _entries = await DatabaseHelper.instance.getEntriesByCar(_selectedCar!.id!); notifyListeners(); }
   Future<void> fetchMaintenance() async { if (_selectedCar != null) _maintenanceEntries = await DatabaseHelper.instance.getMaintenanceByCar(_selectedCar!.id!); notifyListeners(); }
+  Future<void> fetchRecurringCosts() async { if (_selectedCar != null) _recurringCosts = await DatabaseHelper.instance.getActiveRecurringCostsByCar(_selectedCar!.id!); notifyListeners(); }
 
   List<FuelEntry> getEntriesForCar(int carId) => _entries.where((e) => e.carId == carId).toList();
 
@@ -380,7 +385,7 @@ class DataProvider with ChangeNotifier {
       }
     }
     
-    // Import entries with mapped car IDs
+    // Import entries with mapped car IDs and duplicate check
     if (data['entries'] != null && data['entries'] is List) {
       final oldEntries = data['entries'] as List;
       
@@ -390,11 +395,74 @@ class DataProvider with ChangeNotifier {
         
         // Map to new car ID
         if (oldCarId != null && oldIdToNewId.containsKey(oldCarId)) {
-          entryMap['car_id'] = oldIdToNewId[oldCarId];
-          entryMap.remove('id'); // Let DB assign new ID
+          final newCarId = oldIdToNewId[oldCarId]!;
+          entryMap['car_id'] = newCarId;
           
-          await DatabaseHelper.instance.insertEntry(FuelEntry.fromMap(entryMap));
+          // Check for duplicate entry (same car, date, odometer, liters)
+          final existingEntries = await DatabaseHelper.instance.getEntriesByCar(newCarId);
+          final entryDate = DateTime.tryParse(entryMap['date']) ?? DateTime.now();
+          final isDuplicate = existingEntries.any((existing) {
+            final sameDate = existing.date.year == entryDate.year &&
+                           existing.date.month == entryDate.month &&
+                           existing.date.day == entryDate.day;
+            return sameDate &&
+                   existing.odometer == entryMap['odometer'] &&
+                   existing.liters == entryMap['liters'];
+          });
+          
+          if (!isDuplicate) {
+            entryMap.remove('id'); // Let DB assign new ID
+            await DatabaseHelper.instance.insertEntry(FuelEntry.fromMap(entryMap));
+          } else {
+            print('⏭️ Skipping duplicate entry: ${entryMap['date']}');
+          }
         }
+      }
+    }
+    
+    // Import maintenance with duplicate check
+    if (data['maintenance_entries'] != null && data['maintenance_entries'] is List) {
+      final oldMaintenance = data['maintenance_entries'] as List;
+      
+      for (var m in oldMaintenance) {
+        final maintenanceMap = Map<String, dynamic>.from(m);
+        final oldCarId = maintenanceMap['car_id'];
+        
+        if (oldCarId != null && oldIdToNewId.containsKey(oldCarId)) {
+          final newCarId = oldIdToNewId[oldCarId]!;
+          maintenanceMap['car_id'] = newCarId;
+          
+          // Check for duplicate maintenance
+          final existingMaintenance = await DatabaseHelper.instance.getMaintenanceByCar(newCarId);
+          final maintenanceDate = DateTime.tryParse(maintenanceMap['date']) ?? DateTime.now();
+          final isDuplicate = existingMaintenance.any((existing) {
+            final sameDate = existing.date.year == maintenanceDate.year &&
+                           existing.date.month == maintenanceDate.month &&
+                           existing.date.day == maintenanceDate.day;
+            return sameDate &&
+                   existing.odometer == maintenanceMap['odometer'] &&
+                   existing.type == maintenanceMap['type'];
+          });
+          
+          if (!isDuplicate) {
+            maintenanceMap.remove('id');
+            await DatabaseHelper.instance.insertMaintenance(MaintenanceEntry.fromMap(maintenanceMap));
+          } else {
+            print('⏭️ Skipping duplicate maintenance: ${maintenanceMap['date']}');
+          }
+        }
+      }
+    }
+    
+    // Import user settings if present
+    if (data['user_settings'] != null) {
+      try {
+        final settingsMap = Map<String, dynamic>.from(data['user_settings']);
+        final importedSettings = UserSettings.fromMap(settingsMap);
+        await DatabaseHelper.instance.saveSettings(importedSettings);
+        print('✅ User settings imported: ${importedSettings.firstName}');
+      } catch (e) {
+        print('⚠️ Could not import user settings: $e');
       }
     }
     
