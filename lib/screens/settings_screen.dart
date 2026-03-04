@@ -4,7 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data_provider.dart';
-import '../widgets/pole_position_game.dart';
+import '../widgets/snake_game.dart';
 import '../widgets/settings/user_profile_section.dart';
 import '../widgets/settings/car_management_section.dart';
 import '../widgets/settings/appearance_section.dart';
@@ -54,7 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PolePositionGame(themeColor: appColor),
+        builder: (context) => SnakeGame(themeColor: appColor),
       ),
     );
   }

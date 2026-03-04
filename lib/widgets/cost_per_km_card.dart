@@ -168,15 +168,6 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     final totalFuelCost = sorted.fold<double>(0, (sum, e) => sum + e.priceTotal);
     final avgFuelCost = totalFuelCost / totalKm;
     
-    print('📊 Period Average Calculation:');
-    print('   Entries in period: ${sorted.length}');
-    print('   First: ${firstEntry.date.day}-${firstEntry.date.month} @ ${firstEntry.odometer} km');
-    print('   Last: ${lastEntry.date.day}-${lastEntry.date.month} @ ${lastEntry.odometer} km');
-    print('   Total km: $totalKm');
-    print('   Total fuel cost: €$totalFuelCost');
-    print('   Avg fuel cost/km: €${avgFuelCost.toStringAsFixed(3)}');
-    print('');
-    
     // 2. Insurance (proportional to period)
     final insuranceCost = car != null ? (car.insurance * totalMonths) / totalKm : 0.0;
     
@@ -562,13 +553,13 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 45,
+              reservedSize: 32,
               getTitlesWidget: (value, meta) {
                 return Text(
                   '€${value.toStringAsFixed(2)}',
                   style: TextStyle(
                     color: Theme.of(context).hintColor,
-                    fontSize: 10,
+                    fontSize: 9,
                   ),
                 );
               },
@@ -621,7 +612,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: const Color(0xFF8B5CF6).withValues(alpha: 0.4),
+              color: const Color(0xFF8B5CF6),
             ),
           ),
           LineChartBarData(
@@ -632,7 +623,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+              color: const Color(0xFFF59E0B),
             ),
           ),
           LineChartBarData(
@@ -643,7 +634,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: const Color(0xFF10B981).withValues(alpha: 0.4),
+              color: const Color(0xFF10B981),
             ),
           ),
           LineChartBarData(
@@ -654,7 +645,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: const Color(0xFF3B82F6).withValues(alpha: 0.4),
+              color: const Color(0xFF3B82F6),
             ),
           ),
           LineChartBarData(
@@ -665,7 +656,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+              color: const Color(0xFFEF4444),
             ),
           ),
         ],

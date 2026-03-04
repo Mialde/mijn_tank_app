@@ -247,14 +247,15 @@ class DataProvider with ChangeNotifier {
     }
 
     // B. Onderhoud (SORTORDER = 1)
+    double totalMaint = 0.0;
     if (filteredMaintenance.isNotEmpty) {
-      double totalMaint = filteredMaintenance.fold(0.0, (sum, m) => sum + m.cost);
+      totalMaint = filteredMaintenance.fold(0.0, (sum, m) => sum + m.cost);
       items.add(StatItem(
         title: 'Onderhoud',
         value: totalMaint,
         color: Colors.grey,
         percentage: 0,
-        sortOrder: 1, // Onderhoud in het midden
+        sortOrder: 1,
       ));
     }
 
@@ -263,12 +264,21 @@ class DataProvider with ChangeNotifier {
     double monthlyRoadTax = (_selectedCar!.roadTaxFreq == 'Kwartaal' ? _selectedCar!.roadTax / 3 : _selectedCar!.roadTax);
     
     double totalInsurance = (_selectedCar!.insurance) * monthsCount;
-    double totalRoadTax = (monthlyRoadTax) * monthsCount; 
+    double totalRoadTax = (monthlyRoadTax) * monthsCount;
 
     if (totalInsurance > 0) items.add(StatItem(title: 'Verzekering', value: totalInsurance, color: Colors.grey, percentage: 0, sortOrder: 2));
     if (totalRoadTax > 0) items.add(StatItem(title: 'Wegenbelasting', value: totalRoadTax, color: Colors.grey, percentage: 0, sortOrder: 2));
 
-    double grandTotal = totalFuelCost + totalInsurance + totalRoadTax + (filteredMaintenance.fold(0, (sum, m) => sum + m.cost));
+    // D. Abonnementen / Recurring costs (SORTORDER = 2)
+    double totalSubscriptions = 0.0;
+    if (_recurringCosts.isNotEmpty) {
+      totalSubscriptions = _recurringCosts.fold(0.0, (sum, s) => sum + s.monthlyCost) * monthsCount;
+      if (totalSubscriptions > 0) {
+        items.add(StatItem(title: 'Abonnementen', value: totalSubscriptions, color: Colors.grey, percentage: 0, sortOrder: 2));
+      }
+    }
+
+    double grandTotal = totalFuelCost + totalMaint + totalInsurance + totalRoadTax + totalSubscriptions;
     if (grandTotal == 0) return [];
 
     // --- NIEUWE SORTERING ---
@@ -314,13 +324,12 @@ class DataProvider with ChangeNotifier {
     // Als er nog niets geselecteerd is (-1), selecteer dan het item met de HOOGSTE WAARDE.
     // We moeten de index van dat item vinden in de HUIDIGE (op datum gesorteerde) lijst.
     if (_selectedIndex == -1) {
-       int indexOnScreen = items.indexWhere((item) => item.title == highestValueItem.title && item.value == highestValueItem.value);
-       if (indexOnScreen != -1) {
-         // Gebruik microtask om build errors te voorkomen
-         Future.microtask(() {
-           if (_selectedIndex == -1) setSelectedIndex(indexOnScreen);
-         });
-       }
+      int indexOnScreen = items.indexWhere((item) => item.title == highestValueItem.title && item.value == highestValueItem.value);
+      if (indexOnScreen != -1) {
+        // Direct instellen zonder notifyListeners() om rebuild loop te voorkomen.
+        // De widget leest _selectedIndex al in dezelfde build, dus dit is veilig.
+        _selectedIndex = indexOnScreen;
+      }
     }
 
     return items;
