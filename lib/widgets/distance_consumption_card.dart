@@ -3,6 +3,7 @@
 // M:  Totaal km / laatste rit selector
 
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -229,14 +230,24 @@ class _DistanceConsumptionCardState extends State<DistanceConsumptionCard> {
 
     if (entries.isEmpty) return _buildEmptySquare(context, isDarkMode);
 
-    final totalDistance = entries.last.odometer - entries.first.odometer;
-    double lastTripKm = 0;
-    if (entries.length >= 2) {
-      lastTripKm = (entries.last.odometer - entries[entries.length - 2].odometer).abs();
+    // Bereken intervallen
+    final intervals = <_Interval>[];
+    for (int i = 1; i < entries.length; i++) {
+      final km = (entries[i].odometer - entries[i-1].odometer).abs().toDouble();
+      final days = entries[i].date.difference(entries[i-1].date).inDays;
+      if (km > 0) intervals.add(_Interval(km: km, days: days, date: entries[i].date));
     }
 
-    final displayValue = _showTotal ? totalDistance : lastTripKm;
-    final displayLabel = _showTotal ? 'km totaal' : 'km laatste rit';
+    if (intervals.isEmpty) return _buildEmptySquare(context, isDarkMode);
+
+    final sparkPrices = intervals.map((e) => e.km).toList();
+    final lastKm = intervals.last.km;
+    final avgKm = sparkPrices.reduce((a, b) => a + b) / sparkPrices.length;
+    final minKm = sparkPrices.reduce(math.min);
+    final maxKm = sparkPrices.reduce(math.max);
+    final diff = lastKm - avgKm;
+    final isAbove = diff >= 0;
+    final valueColor = isAbove ? const Color(0xFF10B981) : const Color(0xFFEF4444);
 
     return AspectRatio(
       aspectRatio: 1.0,
@@ -249,71 +260,132 @@ class _DistanceConsumptionCardState extends State<DistanceConsumptionCard> {
             blurRadius: 20, offset: const Offset(0, 5),
           )],
         ),
-        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('AFSTAND PER BEURT',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
-                    color: appColor, letterSpacing: 0.5)),
             Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      NumberFormat('#,###', 'nl_NL').format(displayValue.round()),
-                      style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold,
-                          color: appColor, height: 1.0),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(displayLabel,
-                        style: TextStyle(fontSize: 10, color: Theme.of(context).hintColor)),
-                  ],
-                ),
+              child: PageView(
+                onPageChanged: (i) => setState(() => _showTotal = i == 0),
+                children: [
+                  _buildLastPage(context, lastKm, valueColor,
+                      sparkPrices, avgKm, isDarkMode, appColor),
+                  _buildTotaalPage(context, sparkPrices, avgKm,
+                      isDarkMode, appColor, entries),
+                ],
               ),
             ),
-            _buildModeSelector(context, isDarkMode, appColor),
+            _buildPageIndicator(appColor),
+            const SizedBox(height: 12),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildModeSelector(BuildContext context, bool isDarkMode, Color appColor) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDarkMode ? Colors.grey.shade800 : Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
+  Widget _buildLastPage(BuildContext context, double lastKm, Color color,
+      List<double> spark, double avgKm, bool isDarkMode, Color appColor) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSelectorBtn(context, 'Totaal', _showTotal, appColor,
-              () => setState(() => _showTotal = true)),
-          _buildSelectorBtn(context, 'Laatste', !_showTotal, appColor,
-              () => setState(() => _showTotal = false)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('AFSTAND',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
+                      color: appColor, letterSpacing: 0.5)),
+              Text('Laatste',
+                  style: TextStyle(fontSize: 8, color: Theme.of(context).hintColor)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Sparkline zonder shading
+          SizedBox(
+            height: 44,
+            child: CustomPaint(
+              painter: _KmSparklinePainter(
+                values: spark,
+                avgValue: avgKm,
+                color: color,
+                isDarkMode: isDarkMode,
+              ),
+              size: Size.infinite,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '${lastKm.toStringAsFixed(0)} km',
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
+                color: color, height: 1.0),
+          ),
+          Text('laatste beurt',
+              style: TextStyle(fontSize: 10, color: Theme.of(context).hintColor)),
+          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  Widget _buildSelectorBtn(BuildContext context, String label, bool sel,
-      Color appColor, VoidCallback onTap) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: sel ? appColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
+  Widget _buildTotaalPage(BuildContext context, List<double> spark, double avgKm,
+      bool isDarkMode, Color appColor, List entries) {
+    final totalKm = (entries.last.odometer - entries.first.odometer) as double;
+    final minKm = spark.reduce(math.min);
+    final maxKm = spark.reduce(math.max);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('AFSTAND',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
+                      color: appColor, letterSpacing: 0.5)),
+              Text('Totaal',
+                  style: TextStyle(fontSize: 8, color: Theme.of(context).hintColor)),
+            ],
           ),
-          child: Text(label,
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold,
-                  color: sel ? Colors.white : Theme.of(context).hintColor),
-              textAlign: TextAlign.center),
-        ),
+          const SizedBox(height: 16),
+          _buildStatRow(context, 'Totaal', '${NumberFormat('#,###', 'nl_NL').format(totalKm.round())} km', appColor),
+          const SizedBox(height: 10),
+          _buildStatRow(context, 'Langste', '${maxKm.toStringAsFixed(0)} km', const Color(0xFF10B981)),
+          const SizedBox(height: 10),
+          _buildStatRow(context, 'Kortste', '${minKm.toStringAsFixed(0)} km', const Color(0xFFEF4444)),
+          const SizedBox(height: 10),
+          _buildStatRow(context, 'Gemiddeld', '${avgKm.toStringAsFixed(0)} km', const Color(0xFF3B82F6)),
+        ],
       ),
+    );
+  }
+
+  Widget _buildStatRow(BuildContext context, String label, String value, Color color) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label,
+            style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor)),
+        Text(value,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
+      ],
+    );
+  }
+
+  Widget _buildPageIndicator(Color appColor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(width: 6, height: 6,
+            decoration: BoxDecoration(
+                color: _showTotal ? appColor : appColor.withValues(alpha: 0.3),
+                shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Container(width: 6, height: 6,
+            decoration: BoxDecoration(
+                color: !_showTotal ? appColor : appColor.withValues(alpha: 0.3),
+                shape: BoxShape.circle)),
+      ],
     );
   }
 
@@ -371,3 +443,64 @@ class _Interval {
   final DateTime date;
   const _Interval({required this.km, required this.days, required this.date});
 }
+
+// ── Km Sparkline painter ──────────────────────────────────────────
+class _KmSparklinePainter extends CustomPainter {
+  final List<double> values;
+  final double avgValue;
+  final Color color;
+  final bool isDarkMode;
+
+  const _KmSparklinePainter({
+    required this.values,
+    required this.avgValue,
+    required this.color,
+    required this.isDarkMode,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.length < 2) return;
+    final minV = values.reduce(math.min);
+    final maxV = values.reduce(math.max);
+    final range = math.max(maxV - minV, 1.0);
+    final margin = range * 0.3;
+    final yMin = minV - margin;
+    final yMax = maxV + margin;
+
+    double toX(int i) => i / (values.length - 1) * size.width;
+    double toY(double v) => size.height - ((v - yMin) / (yMax - yMin)) * size.height;
+
+    // Gemiddelde lijn gestippeld
+    final avgY = toY(avgValue);
+    final dashPaint = Paint()
+      ..color = (isDarkMode ? Colors.white : Colors.black).withOpacity(0.15)
+      ..strokeWidth = 1;
+    double dx = 0;
+    while (dx < size.width) {
+      canvas.drawLine(Offset(dx, avgY), Offset(math.min(dx + 4, size.width), avgY), dashPaint);
+      dx += 8;
+    }
+
+    // Lijn
+    final linePath = Path()..moveTo(toX(0), toY(values[0]));
+    for (int i = 1; i < values.length; i++) linePath.lineTo(toX(i), toY(values[i]));
+    canvas.drawPath(linePath, Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round);
+
+    // Laatste punt
+    final lx = toX(values.length - 1);
+    final ly = toY(values.last);
+    canvas.drawCircle(Offset(lx, ly), 4,
+        Paint()..color = isDarkMode ? const Color(0xFF1E1E1E) : Colors.white);
+    canvas.drawCircle(Offset(lx, ly), 3, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_KmSparklinePainter old) =>
+      old.values != values || old.color != color;
+} 
