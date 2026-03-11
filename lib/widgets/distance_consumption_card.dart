@@ -288,6 +288,7 @@ class _DistanceConsumptionCardState extends State<DistanceConsumptionCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Titel + label
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -298,28 +299,32 @@ class _DistanceConsumptionCardState extends State<DistanceConsumptionCard> {
                   style: TextStyle(fontSize: 8, color: Theme.of(context).hintColor)),
             ],
           ),
-          const SizedBox(height: 6),
-          // Sparkline zonder shading
-          SizedBox(
-            height: 44,
-            child: CustomPaint(
-              painter: _KmSparklinePainter(
-                values: spark,
-                avgValue: avgKm,
-                color: color,
-                isDarkMode: isDarkMode,
+          // Sparkline verticaal gecentreerd
+          Expanded(
+            child: Center(
+              child: SizedBox(
+                height: 44,
+                child: CustomPaint(
+                  painter: _KmSparklinePainter(
+                    values: spark,
+                    avgValue: avgKm,
+                    color: color,
+                    isDarkMode: isDarkMode,
+                  ),
+                  size: Size.infinite,
+                ),
               ),
-              size: Size.infinite,
             ),
           ),
-          const Spacer(),
-          Text(
-            '${lastKm.toStringAsFixed(0)} km',
-            style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
-                color: color, height: 1.0),
+          // Km rechts uitgelijnd, geen label eronder
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              '${lastKm.toStringAsFixed(0)} km',
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold,
+                  color: color, height: 1.0),
+            ),
           ),
-          Text('laatste beurt',
-              style: TextStyle(fontSize: 10, color: Theme.of(context).hintColor)),
           const SizedBox(height: 8),
         ],
       ),
@@ -503,4 +508,4 @@ class _KmSparklinePainter extends CustomPainter {
   @override
   bool shouldRepaint(_KmSparklinePainter old) =>
       old.values != values || old.color != color;
-} 
+}
