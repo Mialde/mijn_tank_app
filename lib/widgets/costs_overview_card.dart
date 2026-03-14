@@ -23,8 +23,6 @@ class CostsOverviewCard extends StatefulWidget {
 }
 
 class _CostsOverviewCardState extends State<CostsOverviewCard> {
-  bool _showTotal = true; // true = Totaal, false = Gemiddeld
-
   @override
   Widget build(BuildContext context) {
     return widget.size == CardSize.xl ? _buildXL(context) : _buildM(context);
@@ -38,11 +36,29 @@ class _CostsOverviewCardState extends State<CostsOverviewCard> {
     final statItems = provider.getStatsForPeriod();
     final totalAmount = provider.getTotalForPeriod();
     final selectedIndex = provider.selectedIndex;
-    
-    const double holeRadius = 95;
-    const double mainThickness = 20;
-    const double gapWidth = 8;
-    const double ringThickness = 6;
+
+    const double holeRadius = 115;
+    const double mainThickness = 26;
+    const double gapWidth = 8; // verder van de buitenrand
+    const double ringThickness = 5;
+
+    // Auto-selecteer grootste segment als nog niets geselecteerd
+    if (statItems.isNotEmpty && selectedIndex == -1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        provider.setSelectedIndex(0); // statItems zijn al gesorteerd op waarde desc
+      });
+    }
+
+    final fmt = NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 0);
+    final fmtDec = NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 2);
+
+    // Geselecteerd item info
+    final hasSelection = selectedIndex != -1 && selectedIndex < statItems.length;
+    final sel = hasSelection ? statItems[selectedIndex] : null;
+    final selTitle = sel != null ? _getLegendTitle(sel, provider.selectedPeriod) : '';
+    final selAmount = sel != null ? fmtDec.format(sel.value) : '';
+    final selPct = sel != null ? '${sel.percentage.toStringAsFixed(1)}%' : '';
+    final selColor = sel?.color ?? appColor;
 
     return Container(
       decoration: BoxDecoration(
@@ -56,7 +72,7 @@ class _CostsOverviewCardState extends State<CostsOverviewCard> {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -76,15 +92,16 @@ class _CostsOverviewCardState extends State<CostsOverviewCard> {
               _buildCompactSelector(context, provider, appColor),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
           SizedBox(
-            height: 280,
+            height: 320,
             child: statItems.isEmpty
                 ? const Center(child: Text("Geen data."))
                 : Stack(
                     alignment: Alignment.center,
                     children: [
-                      if (selectedIndex != -1 && selectedIndex < statItems.length)
+                      // Indicator ring
+                      if (hasSelection)
                         PieChart(
                           PieChartData(
                             sectionsSpace: 0,
@@ -95,75 +112,94 @@ class _CostsOverviewCardState extends State<CostsOverviewCard> {
                           ),
                           duration: Duration.zero,
                         ),
+                      // Hoofd donut — aanklikbaar
                       PieChart(
                         PieChartData(
-                          sectionsSpace: 0,
+                          sectionsSpace: 2,
                           centerSpaceRadius: holeRadius,
                           startDegreeOffset: -90,
-                          sections: _buildChartSections(statItems, mainThickness),
+                          sections: _buildChartSections(statItems, mainThickness, selectedIndex),
+                          pieTouchData: PieTouchData(
+                            enabled: true,
+                            touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                              if (event is FlTapUpEvent) {
+                                final idx = pieTouchResponse?.touchedSection?.touchedSectionIndex ?? -1;
+                                if (idx != -1) provider.setSelectedIndex(idx);
+                              }
+                            },
+                          ),
                         ),
                         duration: Duration.zero,
                       ),
+                      // Midden tekst
                       Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
-                              NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 0).format(totalAmount),
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                height: 1.2,
-                                color: Theme.of(context).textTheme.bodyLarge?.color,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
+                            // Titel boven
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
                               child: Text(
-                                selectedIndex != -1 && selectedIndex < statItems.length
-                                    ? _getLegendTitle(statItems[selectedIndex], provider.selectedPeriod)
-                                    : '',
+                                hasSelection ? selTitle : 'Totaal',
+                                key: ValueKey(selTitle),
                                 style: TextStyle(
-                                  color: Theme.of(context).hintColor,
-                                  fontSize: 13,
-                                  height: 1.2,
+                                  fontSize: 12,
+                                  color: hasSelection ? selColor : Theme.of(context).hintColor,
+                                  fontWeight: FontWeight.w600,
                                 ),
                                 textAlign: TextAlign.center,
                               ),
                             ),
+                            const SizedBox(height: 4),
+                            // Groot bedrag
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              child: Text(
+                                hasSelection ? selAmount : fmt.format(totalAmount),
+                                key: ValueKey(hasSelection ? sel!.value : totalAmount),
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: hasSelection ? selColor : Theme.of(context).textTheme.bodyLarge?.color,
+                                  height: 1.1,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            // Percentage + totaal onder
+                            if (hasSelection) ...[
+                              const SizedBox(height: 4),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 200),
+                                child: Text(
+                                  '$selPct van ${fmt.format(totalAmount)}',
+                                  key: ValueKey(selPct),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Theme.of(context).hintColor,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
                     ],
                   ),
           ),
-          const SizedBox(height: 4),
-          if (statItems.isNotEmpty) ...[
-            SizedBox(
-              height: 277,
-              child: _buildLegendGrid(context, provider, statItems, selectedIndex),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  // M: Square with selector
+  bool _showThisMonth = true;
+
+  // M: Square with swipeable pages
   Widget _buildM(BuildContext context) {
     final provider = context.watch<DataProvider>();
     final appColor = provider.themeColor;
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final totalAmount = provider.getTotalForPeriod();
-    
-    // Calculate average per fill
-    final entries = provider.entries;
-    final avgPerFill = entries.isNotEmpty ? totalAmount / entries.length : 0;
-    
-    final displayValue = _showTotal ? totalAmount : avgPerFill;
-    final displayLabel = _showTotal ? 'totaal' : 'gemiddeld per tank';
 
     return AspectRatio(
       aspectRatio: 1.0,
@@ -179,116 +215,153 @@ class _CostsOverviewCardState extends State<CostsOverviewCard> {
             ),
           ],
         ),
-        padding: const EdgeInsets.all(16),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.euro, color: appColor, size: 40),
+            Expanded(
+              child: PageView(
+                onPageChanged: (i) => setState(() => _showThisMonth = i == 0),
+                children: [
+                  _buildMPage(context, appColor, isDarkMode, provider, TimePeriod.oneMonth, 'Deze maand'),
+                  _buildMPage(context, appColor, isDarkMode, provider, TimePeriod.allTime, 'Totaal'),
+                ],
+              ),
+            ),
+            _buildMPageIndicator(appColor),
             const SizedBox(height: 12),
-            Text(
-              NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 0).format(displayValue),
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: appColor,
-                height: 1.0,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              displayLabel,
-              style: TextStyle(
-                fontSize: 10,
-                color: Theme.of(context).hintColor,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const Spacer(),
-            _buildModeSelector(context, isDarkMode),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildModeSelector(BuildContext context, bool isDarkMode) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDarkMode ? Colors.grey.shade800 : Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildMPage(BuildContext context, Color appColor, bool isDarkMode,
+      DataProvider provider, TimePeriod period, String label) {
+    final rawItems = provider.getStatsForSpecificPeriod(period);
+
+    // Brandstof samenvoegen tot 1 item
+    final fuelTotal = rawItems.where((s) => s.isFuelGroup).fold<double>(0, (s, i) => s + i.value);
+    final nonFuel   = rawItems.where((s) => !s.isFuelGroup).toList();
+    final statItems = [
+      if (fuelTotal > 0)
+        StatItem(title: 'Brandstof', value: fuelTotal, color: const Color(0xFFEF4444), percentage: 0, sortOrder: 0),
+      ...nonFuel,
+    ];
+
+    final totalAmount = statItems.fold<double>(0, (s, i) => s + i.value);
+    final fmt = NumberFormat.currency(locale: 'nl_NL', symbol: '€', decimalDigits: 0);
+    final maxVal = statItems.isEmpty ? 1.0 : statItems.map((s) => s.value).reduce((a, b) => a > b ? a : b);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSelectorButton(
-            context,
-            icon: Icons.account_balance_wallet,
-            label: 'Totaal',
-            isSelected: _showTotal,
-            isDarkMode: isDarkMode,
-            onTap: () => setState(() => _showTotal = true),
+          // Header — zelfde stijl als andere M cards
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'KOSTEN',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: appColor,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              Text(
+                label,
+                style: TextStyle(fontSize: 8, color: Theme.of(context).hintColor),
+              ),
+            ],
           ),
-          _buildSelectorButton(
-            context,
-            icon: Icons.show_chart,
-            label: 'Gem.',
-            isSelected: !_showTotal,
-            isDarkMode: isDarkMode,
-            onTap: () => setState(() => _showTotal = false),
+          const SizedBox(height: 8),
+          // Kolommen
+          Expanded(
+            child: statItems.isEmpty
+                ? Center(child: Icon(Icons.bar_chart, color: Theme.of(context).hintColor.withValues(alpha: 0.3), size: 32))
+                : LayoutBuilder(builder: (context, constraints) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: statItems.take(6).toList().asMap().entries.map((e) {
+                        final i = e.key;
+                        final item = e.value;
+                        final frac = (maxVal > 0) ? (item.value / maxVal).clamp(0.0, 1.0) : 0.0;
+                        final barH = (constraints.maxHeight * frac).clamp(4.0, constraints.maxHeight);
+                        return Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(left: i == 0 ? 0 : 3),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Container(
+                                  height: barH,
+                                  decoration: BoxDecoration(
+                                    color: item.color,
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  }),
+          ),
+          const SizedBox(height: 6),
+          // Legenda gecentreerd
+          if (statItems.isNotEmpty)
+            Center(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 2,
+                alignment: WrapAlignment.center,
+                children: statItems.take(6).map((item) {
+                  final name = item.title;
+                  final short = name.length > 9 ? '${name.substring(0, 8)}.' : name;
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 6, height: 6, decoration: BoxDecoration(color: item.color, shape: BoxShape.circle)),
+                      const SizedBox(width: 3),
+                      Text(short, style: TextStyle(fontSize: 8, color: Theme.of(context).hintColor)),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          const SizedBox(height: 6),
+          // Totaal rechts uitgelijnd
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                'totaal',
+                style: TextStyle(fontSize: 9, color: Theme.of(context).hintColor),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                fmt.format(totalAmount),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: appColor, height: 1.0),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSelectorButton(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required bool isSelected,
-    required bool isDarkMode,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? (isDarkMode ? Colors.white : Colors.black)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 12,
-                color: isSelected
-                    ? (isDarkMode ? Colors.black : Colors.white)
-                    : Theme.of(context).hintColor,
-              ),
-              const SizedBox(width: 3),
-              Flexible(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: isSelected
-                        ? (isDarkMode ? Colors.black : Colors.white)
-                        : Theme.of(context).hintColor,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+  Widget _buildMPageIndicator(Color appColor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(width: 6, height: 6, decoration: BoxDecoration(color: _showThisMonth ? appColor : appColor.withValues(alpha: 0.3), shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Container(width: 6, height: 6, decoration: BoxDecoration(color: !_showThisMonth ? appColor : appColor.withValues(alpha: 0.3), shape: BoxShape.circle)),
+      ],
     );
   }
 
@@ -337,7 +410,7 @@ class _CostsOverviewCardState extends State<CostsOverviewCard> {
     );
   }
 
-  List<PieChartSectionData> _buildChartSections(List<StatItem> items, double thickness) {
+  List<PieChartSectionData> _buildChartSections(List<StatItem> items, double thickness, int selectedIndex) {
     return List.generate(
       items.length,
       (i) => PieChartSectionData(

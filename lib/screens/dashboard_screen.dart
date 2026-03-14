@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../data_provider.dart';
 import '../models/card_config.dart';
-import '../widgets/apk_warning_banner.dart';
+import '../widgets/warnings_banner.dart';
 import '../widgets/dashboard_grid.dart';
 import '../widgets/distance_consumption_card.dart';
 import '../widgets/costs_overview_card.dart';
@@ -15,6 +15,7 @@ import '../widgets/efficiency_monitor_card.dart';
 import '../widgets/cost_per_km_card.dart';
 import '../widgets/timeline_heatmap_card.dart';
 import '../widgets/card_visibility_selector.dart';
+import '../widgets/skeleton_card.dart';
 import 'history_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -36,7 +37,50 @@ class DashboardScreen extends StatelessWidget {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     if (provider.isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Container(
+            width: 120,
+            height: 14,
+            decoration: BoxDecoration(
+              color: isDarkMode ? const Color(0xFF2A2A2A) : const Color(0xFFE8E8E8),
+              borderRadius: BorderRadius.circular(7),
+            ),
+          ),
+        ),
+        body: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                const SkeletonCard(isXL: true),
+                const SizedBox(height: 16),
+                Row(
+                  children: const [
+                    Expanded(child: SkeletonCard(isXL: false)),
+                    SizedBox(width: 16),
+                    Expanded(child: SkeletonCard(isXL: false)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const SkeletonCard(isXL: true),
+                const SizedBox(height: 16),
+                Row(
+                  children: const [
+                    Expanded(child: SkeletonCard(isXL: false)),
+                    SizedBox(width: 16),
+                    Expanded(child: SkeletonCard(isXL: false)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
     
     if (selectedCar == null) {
@@ -76,9 +120,9 @@ class DashboardScreen extends StatelessWidget {
           : SingleChildScrollView(
               child: Column(
                 children: [
-                  const ApkWarningBanner(),
-                  const SizedBox(height: 24),
-                  
+                  const WarningsBanner(),
+                  _FuelTypeFilter(provider: provider),
+
                   // Grid layout with size-aware cards
                   DashboardGrid(
                     configs: visibleCardsList,
@@ -263,6 +307,59 @@ class DashboardScreen extends StatelessWidget {
                 }
               );
             }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+
+}
+
+class _FuelTypeFilter extends StatelessWidget {
+  final dynamic provider;
+  const _FuelTypeFilter({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final types = provider.availableFuelTypes as List<String>;
+    if (types.length < 2) return const SizedBox.shrink();
+
+    final selected = provider.selectedFuelType as String?;
+    final appColor = provider.themeColor as Color;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: Row(
+        children: [
+          _chip(context, 'Alles', selected == null, appColor, () => provider.setFuelTypeFilter(null)),
+          ...types.map((t) => Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: _chip(context, t, selected == t, appColor, () => provider.setFuelTypeFilter(t)),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, String label, bool active, Color color, VoidCallback onTap) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? color : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06)),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: active ? FontWeight.bold : FontWeight.normal,
+            color: active ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
           ),
         ),
       ),

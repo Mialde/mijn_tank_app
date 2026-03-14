@@ -2,6 +2,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'empty_state.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../data_provider.dart';
@@ -323,42 +324,12 @@ class _TimelineHeatmapCardState extends State<TimelineHeatmapCard> {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, bool isDarkMode) {
-    return Material(
-      color: Theme.of(context).cardTheme.color,
-      borderRadius: BorderRadius.circular(24),
-      elevation: 4,
-      shadowColor: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05),
-      child: Container(
-        height: 200,
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.calendar_today_outlined, size: 48, color: Theme.of(context).hintColor.withValues(alpha: 0.3)),
-              const SizedBox(height: 12),
-              Text('Nog geen timeline gegevens', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Theme.of(context).hintColor)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildEmptyState(BuildContext context, bool isDarkMode) =>
+      EmptyCardXL(icon: Icons.calendar_today_outlined, title: 'Geen tankbeurten', isDarkMode: isDarkMode);
 
-  Widget _buildEmpty(BuildContext context, bool isDarkMode) {
-    return AspectRatio(
-      aspectRatio: 1.0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05), blurRadius: 20, offset: const Offset(0, 5))],
-        ),
-        child: Center(child: Icon(Icons.calendar_today_outlined, size: 48, color: Theme.of(context).hintColor.withValues(alpha: 0.3))),
-      ),
-    );
-  }
+  Widget _buildEmpty(BuildContext context, bool isDarkMode) =>
+      EmptyCardM(icon: Icons.calendar_today_outlined, title: 'Geen tankbeurten', isDarkMode: isDarkMode);
+
 }
 
 // ── GaugePainter is een top-level class, BUITEN de widget class ──

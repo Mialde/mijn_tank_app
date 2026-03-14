@@ -5,6 +5,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'empty_state.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../data_provider.dart';
@@ -197,47 +198,13 @@ class _PriceTrackerCardState extends State<PriceTrackerCard> {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, bool isDarkMode) {
-    return Material(
-      color: Theme.of(context).cardTheme.color,
-      borderRadius: BorderRadius.circular(24),
-      elevation: 4,
-      shadowColor: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05),
-      child: Container(
-        height: 200,
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.local_gas_station_outlined, size: 48, color: Theme.of(context).hintColor.withValues(alpha: 0.3)),
-              const SizedBox(height: 12),
-              Text('Nog geen prijsgegevens',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Theme.of(context).hintColor)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildEmptyState(BuildContext context, bool isDarkMode) =>
+      EmptyCardXL(icon: Icons.local_gas_station_outlined, title: 'Geen prijsgegevens', isDarkMode: isDarkMode);
 
-  Widget _buildEmptySquare(BuildContext context, bool isDarkMode) {
-    return AspectRatio(
-      aspectRatio: 1.0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05), blurRadius: 20, offset: const Offset(0, 5))],
-        ),
-        child: Center(child: Icon(Icons.local_gas_station_outlined, size: 48,
-            color: Theme.of(context).hintColor.withValues(alpha: 0.3))),
-      ),
-    );
-  }
+  Widget _buildEmptySquare(BuildContext context, bool isDarkMode) =>
+      EmptyCardM(icon: Icons.local_gas_station_outlined, title: 'Geen prijsgegevens', isDarkMode: isDarkMode);
 }
 
-// ── Lollipop chart widget ─────────────────────────────────────────
 class _LollipopChart extends StatefulWidget {
   final List entries;
   final double avgPrice;

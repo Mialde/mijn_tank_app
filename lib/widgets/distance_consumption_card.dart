@@ -5,6 +5,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'empty_state.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -394,52 +395,11 @@ class _DistanceConsumptionCardState extends State<DistanceConsumptionCard> {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, bool isDarkMode) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(
-          color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05),
-          blurRadius: 20, offset: const Offset(0, 5),
-        )],
-      ),
-      height: 200,
-      padding: const EdgeInsets.all(24),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.route_outlined, size: 48,
-                color: Theme.of(context).hintColor.withValues(alpha: 0.3)),
-            const SizedBox(height: 12),
-            Text('Minimaal 2 tankbeurten nodig',
-                style: TextStyle(fontSize: 14, color: Theme.of(context).hintColor)),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _buildEmptyState(BuildContext context, bool isDarkMode) =>
+      EmptyCardXL(icon: Icons.route_outlined, title: 'Minimaal 2 tankbeurten nodig', isDarkMode: isDarkMode);
 
-  Widget _buildEmptySquare(BuildContext context, bool isDarkMode) {
-    return AspectRatio(
-      aspectRatio: 1.0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(
-            color: Colors.black.withValues(alpha: isDarkMode ? 0.3 : 0.05),
-            blurRadius: 20, offset: const Offset(0, 5),
-          )],
-        ),
-        child: Center(
-          child: Icon(Icons.route_outlined, size: 48,
-              color: Theme.of(context).hintColor.withValues(alpha: 0.3)),
-        ),
-      ),
-    );
-  }
+  Widget _buildEmptySquare(BuildContext context, bool isDarkMode) =>
+      EmptyCardM(icon: Icons.route_outlined, title: 'Minimaal 2 tankbeurten nodig', isDarkMode: isDarkMode);
 }
 
 class _Interval {

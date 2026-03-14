@@ -62,7 +62,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
 
   Map<String, double> _calculateAllCosts(DataProvider provider, int entryIndex, List<dynamic> sorted) {
     if (entryIndex >= sorted.length - 1) {
-      return {'fuel': 0, 'insurance': 0, 'roadTax': 0, 'maintenance': 0, 'subscriptions': 0};
+      return {'fuel': 0, 'maintenance': 0, 'subscriptions': 0};
     }
     
     final current = sorted[entryIndex];
@@ -70,32 +70,14 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     final km = (next.odometer - current.odometer).abs();
     
     if (km <= 0) {
-      return {'fuel': 0, 'insurance': 0, 'roadTax': 0, 'maintenance': 0, 'subscriptions': 0};
+      return {'fuel': 0, 'maintenance': 0, 'subscriptions': 0};
     }
     
     final car = provider.selectedCar;
     final monthsInPeriod = (next.date.difference(current.date).inDays / 30).clamp(0.1, 999).toDouble();
     
     final fuelCost = current.priceTotal / km;
-    final insuranceCost = car != null ? (car.insurance * monthsInPeriod) / km : 0.0;
-    
-    double roadTaxMonthly = 0;
-    if (car != null) {
-      switch (car.roadTaxFreq.toLowerCase()) {
-        case 'yearly':
-        case 'jaarlijks':
-          roadTaxMonthly = car.roadTax / 12;
-          break;
-        case 'quarterly':
-        case 'per kwartaal':
-        case 'kwartaal':
-          roadTaxMonthly = car.roadTax / 3;
-          break;
-        default:
-          roadTaxMonthly = car.roadTax;
-      }
-    }
-    final roadTaxCost = (roadTaxMonthly * monthsInPeriod) / km;
+
     
     final lastEntry = sorted.last;
     final maintenanceBeforeLast = provider.maintenanceEntries.where((m) => 
@@ -137,17 +119,17 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     
     return {
       'fuel': fuelCost,
-      'insurance': insuranceCost,
-      'roadTax': roadTaxCost,
       'maintenance': maintenanceCost,
-      'subscriptions': subscriptionCost,
+      'subscriptions': 0,
+      '_km': km,
+      '_months': monthsInPeriod,
     };
   }
 
   // NEW: Calculate average costs over entire filtered period
   Map<String, double> _calculatePeriodAverageCosts(DataProvider provider, List<dynamic> sorted) {
     if (sorted.length < 2) {
-      return {'fuel': 0, 'insurance': 0, 'roadTax': 0, 'maintenance': 0, 'subscriptions': 0};
+      return {'fuel': 0, 'maintenance': 0, 'subscriptions': 0};
     }
     
     final car = provider.selectedCar;
@@ -157,7 +139,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     // Total km in period
     final totalKm = lastEntry.odometer - firstEntry.odometer;
     if (totalKm <= 0) {
-      return {'fuel': 0, 'insurance': 0, 'roadTax': 0, 'maintenance': 0, 'subscriptions': 0};
+      return {'fuel': 0, 'maintenance': 0, 'subscriptions': 0};
     }
     
     // Total days and months
@@ -168,27 +150,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     final totalFuelCost = sorted.fold<double>(0, (sum, e) => sum + e.priceTotal);
     final avgFuelCost = totalFuelCost / totalKm;
     
-    // 2. Insurance (proportional to period)
-    final insuranceCost = car != null ? (car.insurance * totalMonths) / totalKm : 0.0;
-    
-    // 3. Road tax (proportional to period)
-    double roadTaxMonthly = 0;
-    if (car != null) {
-      switch (car.roadTaxFreq.toLowerCase()) {
-        case 'yearly':
-        case 'jaarlijks':
-          roadTaxMonthly = car.roadTax / 12;
-          break;
-        case 'quarterly':
-        case 'per kwartaal':
-        case 'kwartaal':
-          roadTaxMonthly = car.roadTax / 3;
-          break;
-        default:
-          roadTaxMonthly = car.roadTax;
-      }
-    }
-    final roadTaxCost = (roadTaxMonthly * totalMonths) / totalKm;
+
     
     // 4. Maintenance - all maintenance BEFORE end of period (same as chart)
     final maintenanceBeforePeriod = provider.maintenanceEntries.where((m) => 
@@ -215,10 +177,10 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     
     return {
       'fuel': avgFuelCost,
-      'insurance': insuranceCost,
-      'roadTax': roadTaxCost,
       'maintenance': maintenanceCost,
-      'subscriptions': subscriptionCost,
+      'subscriptions': 0,
+      '_km': totalKm,
+      '_months': totalMonths,
     };
   }
 
@@ -238,8 +200,6 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     if (sorted.length < 2) {
       return _buildEmptyState(context, isDarkMode);
     }
-    
-    final allCosts = _calculatePeriodAverageCosts(provider, sorted);
     
     return Material(
       color: Theme.of(context).cardTheme.color,
@@ -268,12 +228,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
               ],
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              height: 200,
-              child: _buildChart(context, appColor, isDarkMode, provider, sorted),
-            ),
-            const SizedBox(height: 16),
-            _buildBreakdown(context, allCosts),
+            _buildChart(context, appColor, isDarkMode, provider, sorted),
           ],
         ),
       ),
@@ -322,24 +277,39 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
   Widget _buildBreakdown(BuildContext context, Map<String, double> costs) {
     final provider = context.watch<DataProvider>();
     final appColor = provider.themeColor;
-    final total = costs.values.fold<double>(0, (sum, v) => sum + v);
+    // Tel recurring costs mee in totaal (subscriptions staat op 0, posts worden apart opgeteld)
+    final km = costs['_km'] ?? 1.0;
+    final months = costs['_months'] ?? 1.0;
+    double recurringTotal = 0;
+    if (km > 0 && months > 0) {
+      recurringTotal = provider.recurringCosts.fold<double>(0, (s, c) => s + (c.monthlyCost * months) / km);
+    }
+    final total = costs.entries
+        .where((e) => !e.key.startsWith('_'))
+        .fold<double>(0, (sum, e) => sum + e.value) + recurringTotal;
     
     final items = <Widget>[];
     
+    // Vaste kleuren palette voor recurring cost posts
+    const fixedPalette = [
+      Color(0xFF8B5CF6), Color(0xFF3B82F6), Color(0xFF10B981),
+      Color(0xFF06B6D4), Color(0xFFEC4899), Color(0xFF6366F1),
+    ];
+
     if (costs['fuel']! > 0) {
       items.add(_buildBreakdownRow('Brandstof', costs['fuel']!, const Color(0xFFEF4444)));
-    }
-    if (costs['insurance']! > 0) {
-      items.add(_buildBreakdownRow('Verzekering', costs['insurance']!, const Color(0xFF3B82F6)));
-    }
-    if (costs['roadTax']! > 0) {
-      items.add(_buildBreakdownRow('Wegenbelasting', costs['roadTax']!, const Color(0xFF10B981)));
     }
     if (costs['maintenance']! > 0) {
       items.add(_buildBreakdownRow('Onderhoud', costs['maintenance']!, const Color(0xFFF59E0B)));
     }
-    if (costs['subscriptions']! > 0) {
-      items.add(_buildBreakdownRow('Abonnementen', costs['subscriptions']!, const Color(0xFF8B5CF6)));
+    // Recurring cost posts elk met eigen kleur
+    int paletteIdx = 0;
+    for (final cost in provider.recurringCosts) {
+      final val = km > 0 && months > 0 ? (cost.monthlyCost * months) / km : 0.0;
+      if (val > 0) {
+        items.add(_buildBreakdownRow(cost.name, val, fixedPalette[paletteIdx % fixedPalette.length]));
+        paletteIdx++;
+      }
     }
     
     // Add Gemiddeld Totaal as 6th item
@@ -435,234 +405,121 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
   }
 
   Widget _buildChart(BuildContext context, Color appColor, bool isDarkMode, DataProvider provider, List<dynamic> sorted) {
-    if (sorted.isEmpty) return const SizedBox();
-    
-    final car = provider.selectedCar;
-    
-    double globalMaintenanceCost = 0;
-    double globalSubscriptionCost = 0;
-    
-    final lastEntry = sorted.last;
-    
-    final maintenanceBeforeLast = provider.maintenanceEntries.where((m) => 
-      m.date.isBefore(lastEntry.date) || m.date.isAtSameMomentAs(lastEntry.date)
-    ).toList();
+    // Bouw kostenposten op — zelfde volgorde/kleuren als breakdown
+    const fixedPalette = [
+      Color(0xFF8B5CF6), Color(0xFF3B82F6), Color(0xFF10B981),
+      Color(0xFF06B6D4), Color(0xFFEC4899), Color(0xFF6366F1),
+    ];
 
-    if (maintenanceBeforeLast.isNotEmpty) {
-      final totalMaintenanceCost = maintenanceBeforeLast.fold<double>(0, (sum, m) => sum + m.cost);
-      final firstMaintenance = maintenanceBeforeLast.reduce((a, b) => a.date.isBefore(b.date) ? a : b);
-      
-      final allEntries = provider.entries.toList()..sort((a, b) => a.date.compareTo(b.date));
-      final startOdometer = _getMaintenanceOdometer(firstMaintenance, allEntries);
-      final kmSinceMaintenance = lastEntry.odometer - startOdometer;
-      
-      if (kmSinceMaintenance > 0) {
-        globalMaintenanceCost = totalMaintenanceCost / kmSinceMaintenance;
-      }
+    final allCosts = _calculatePeriodAverageCosts(provider, sorted);
+    final km     = allCosts['_km']     ?? 1.0;
+    final months = allCosts['_months'] ?? 1.0;
+
+    final bars = <_BarItem>[];
+
+    if ((allCosts['fuel'] ?? 0) > 0)
+      bars.add(_BarItem('Brandstof', allCosts['fuel']!, const Color(0xFFEF4444)));
+    if ((allCosts['maintenance'] ?? 0) > 0)
+      bars.add(_BarItem('Onderhoud', allCosts['maintenance']!, const Color(0xFFF59E0B)));
+
+    for (int r = 0; r < provider.recurringCosts.length; r++) {
+      final c = provider.recurringCosts[r];
+      final val = (km > 0 && months > 0) ? (c.monthlyCost * months) / km : 0.0;
+      if (val > 0) bars.add(_BarItem(c.name, val, fixedPalette[r % fixedPalette.length]));
     }
-    
-    if (provider.recurringCosts.isNotEmpty && sorted.length >= 2) {
-      final totalMonthlySubscriptions = provider.recurringCosts.fold<double>(0, (sum, s) => sum + s.monthlyCost);
-      final firstEntry = sorted.first;
-      final totalDays = lastEntry.date.difference(firstEntry.date).inDays;
-      final totalMonths = totalDays / 30;
-      final totalKm = lastEntry.odometer - firstEntry.odometer;
-      
-      if (totalKm > 0 && totalMonths > 0) {
-        globalSubscriptionCost = (totalMonthlySubscriptions * totalMonths) / totalKm;
+
+    if (bars.isEmpty) return const SizedBox();
+
+    final total = bars.fold<double>(0, (s, b) => s + b.value);
+    final maxVal = total; // schaal op totaal zodat totaalbalk 100% breed is
+
+    return LayoutBuilder(builder: (context, constraints) {
+      const barHeight = 20.0;
+      const labelW    = 110.0;
+      const valueW    = 56.0;
+      const spacing   = 10.0;
+      final appColor  = provider.themeColor;
+
+      // Alle bars + scheidingslijn + totaalbalk
+      final allRows = <Widget>[];
+
+      for (int i = 0; i < bars.length; i++) {
+        final bar = bars[i];
+        final frac = (maxVal > 0) ? (bar.value / maxVal).clamp(0.0, 1.0) : 0.0;
+        allRows.add(Padding(
+          padding: const EdgeInsets.only(bottom: spacing),
+          child: _buildBar(context, bar.name, bar.value, frac, barHeight, labelW, valueW, bar.color),
+        ));
       }
-    }
-    
-    final List<FlSpot> fuelSpots = [];
-    final List<FlSpot> insuranceSpots = [];
-    final List<FlSpot> taxSpots = [];
-    final List<FlSpot> maintenanceSpots = [];
-    final List<FlSpot> subscriptionSpots = [];
-    
-    // Track minimum fuel cost for smart Y-axis
-    double minFuelCost = double.infinity;
-    
-    for (int i = 0; i < sorted.length - 1; i++) {
-      final current = sorted[i];
-      final next = sorted[i + 1];
-      final km = (next.odometer - current.odometer).abs();
-      
-      if (km > 0) {
-        final x = i.toDouble();
-        final monthsInPeriod = (next.date.difference(current.date).inDays / 30).clamp(0.1, 999).toDouble();
-        
-        final fuelCost = current.priceTotal / km;
-        
-        // Track minimum
-        if (fuelCost < minFuelCost) {
-          minFuelCost = fuelCost;
-        }
-        
-        final insuranceCost = car != null ? (car.insurance * monthsInPeriod) / km : 0.0;
-        
-        double roadTaxMonthly = 0;
-        if (car != null) {
-          switch (car.roadTaxFreq.toLowerCase()) {
-            case 'yearly':
-            case 'jaarlijks':
-              roadTaxMonthly = car.roadTax / 12;
-              break;
-            case 'quarterly':
-            case 'per kwartaal':
-            case 'kwartaal':
-              roadTaxMonthly = car.roadTax / 3;
-              break;
-            default:
-              roadTaxMonthly = car.roadTax;
-          }
-        }
-        final taxCost = (roadTaxMonthly * monthsInPeriod) / km;
-        
-        final hasMaintenanceBeforeThis = provider.maintenanceEntries.any((m) => 
-          m.date.isBefore(current.date) || m.date.isAtSameMomentAs(current.date)
-        );
-        final maintenanceCost = hasMaintenanceBeforeThis ? globalMaintenanceCost : 0.0;
-        
-        final subscriptionCost = globalSubscriptionCost;
-        
-        fuelSpots.add(FlSpot(x, fuelCost));
-        insuranceSpots.add(FlSpot(x, fuelCost + insuranceCost));
-        taxSpots.add(FlSpot(x, fuelCost + insuranceCost + taxCost));
-        maintenanceSpots.add(FlSpot(x, fuelCost + insuranceCost + taxCost + maintenanceCost));
-        subscriptionSpots.add(FlSpot(x, fuelCost + insuranceCost + taxCost + maintenanceCost + subscriptionCost));
-      }
-    }
-    
-    // Calculate smart minY: lowest fuel cost - 0.05, rounded down to nearest 0.05
-    final calculatedMin = minFuelCost - 0.05;
-    final smartMinY = (calculatedMin / 0.05).floor() * 0.05;
-    final finalMinY = (smartMinY < 0 ? 0.0 : smartMinY).toDouble();
-    
-    return LineChart(
-      LineChartData(
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: 0.02,
-          getDrawingHorizontalLine: (value) => FlLine(
-            color: Theme.of(context).hintColor.withValues(alpha: 0.1),
-            strokeWidth: 1,
+
+      // Scheidingslijn
+      allRows.add(Padding(
+        padding: const EdgeInsets.only(bottom: spacing),
+        child: Row(children: [
+          const SizedBox(width: labelW),
+          Expanded(child: Divider(color: Theme.of(context).hintColor.withValues(alpha: 0.2), height: 1)),
+          const SizedBox(width: valueW),
+        ]),
+      ));
+
+      // Totaalbalk
+      allRows.add(_buildBar(context, 'Totaal', total, 1.0, barHeight, labelW, valueW, appColor, bold: true));
+
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: allRows);
+    });
+  }
+
+  Widget _buildBar(BuildContext context, String name, double value, double frac,
+      double barHeight, double labelW, double valueW, Color color, {bool bold = false}) {
+    return SizedBox(
+      height: barHeight,
+      child: Row(children: [
+        SizedBox(
+          width: labelW,
+          child: Text(
+            name,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.normal,
+              color: bold ? Theme.of(context).textTheme.bodyLarge?.color : Theme.of(context).hintColor,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 32,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  '€${value.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    color: Theme.of(context).hintColor,
-                    fontSize: 9,
-                  ),
-                );
-              },
+        Expanded(
+          child: Stack(alignment: Alignment.centerLeft, children: [
+            Container(
+              height: barHeight,
+              decoration: BoxDecoration(
+                color: Theme.of(context).hintColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+              ),
             ),
-          ),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            FractionallySizedBox(
+              widthFactor: frac,
+              child: Container(
+                height: barHeight,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: bold ? 1.0 : 0.85),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+          ]),
         ),
-        borderData: FlBorderData(
-          show: true,
-          border: Border(
-            bottom: BorderSide(color: Theme.of(context).hintColor.withValues(alpha: 0.3)),
-            left: BorderSide(color: Theme.of(context).hintColor.withValues(alpha: 0.3)),
-          ),
-        ),
-        lineTouchData: LineTouchData(
-          enabled: true,
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (List<LineBarSpot> touchedSpots) {
-              return touchedSpots.map((spot) {
-                final index = spot.x.toInt();
-                if (index < 0 || index >= sorted.length - 1) return null;
-                
-                final current = sorted[index];
-                final dateStr = '${current.date.day}-${current.date.month}';
-                
-                // Show only the TOP layer (total cost)
-                if (spot.barIndex == 0) { // subscriptions = top layer
-                  return LineTooltipItem(
-                    '$dateStr\n€${spot.y.toStringAsFixed(2)}/km',
-                    const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  );
-                }
-                return null; // Hide other layers
-              }).toList();
-            },
+        SizedBox(
+          width: valueW,
+          child: Text(
+            '€${value.toStringAsFixed(3)}',
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
+              color: color,
+            ),
           ),
         ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: subscriptionSpots,
-            isCurved: true,
-            color: const Color(0xFF8B5CF6),
-            barWidth: 0,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: const Color(0xFF8B5CF6),
-            ),
-          ),
-          LineChartBarData(
-            spots: maintenanceSpots,
-            isCurved: true,
-            color: const Color(0xFFF59E0B),
-            barWidth: 0,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: const Color(0xFFF59E0B),
-            ),
-          ),
-          LineChartBarData(
-            spots: taxSpots,
-            isCurved: true,
-            color: const Color(0xFF10B981),
-            barWidth: 0,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: const Color(0xFF10B981),
-            ),
-          ),
-          LineChartBarData(
-            spots: insuranceSpots,
-            isCurved: true,
-            color: const Color(0xFF3B82F6),
-            barWidth: 0,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: const Color(0xFF3B82F6),
-            ),
-          ),
-          LineChartBarData(
-            spots: fuelSpots,
-            isCurved: true,
-            color: const Color(0xFFEF4444),
-            barWidth: 0,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: const Color(0xFFEF4444),
-            ),
-          ),
-        ],
-        minY: finalMinY,
-      ),
-      duration: Duration.zero,
+      ]),
     );
   }
 
@@ -713,7 +570,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     // Get costs for both pages
     final latestCosts = sorted.length >= 2 
         ? _calculateAllCosts(provider, sorted.length - 2, sorted)
-        : {'fuel': 0.0, 'insurance': 0.0, 'roadTax': 0.0, 'maintenance': 0.0, 'subscriptions': 0.0};
+        : {'fuel': 0.0, 'maintenance': 0.0, 'subscriptions': 0.0};
     final allTimeCosts = _calculatePeriodAverageCosts(provider, sorted);
 
     return AspectRatio(
@@ -750,7 +607,25 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
   }
 
   Widget _buildMPage(BuildContext context, Map<String, double> costs, String label, Color appColor, bool isDarkMode) {
-    final total = costs.values.fold<double>(0, (sum, v) => sum + v);
+    final provider = context.read<DataProvider>();
+    final km = costs['_km'] ?? 1.0;
+    final months = costs['_months'] ?? 1.0;
+
+    // Bereken per recurring cost de kosten per km
+    final recurringCosts = provider.recurringCosts;
+    final recurringPerKm = <String, double>{};
+    double recurringTotal = 0;
+    if (km > 0 && months > 0) {
+      for (final c in recurringCosts) {
+        final val = (c.monthlyCost * months) / km;
+        recurringPerKm[c.name] = val;
+        recurringTotal += val;
+      }
+    }
+
+    final total = costs.entries
+        .where((e) => !e.key.startsWith('_'))
+        .fold<double>(0, (sum, e) => sum + e.value) + recurringTotal;
     
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -797,7 +672,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
                             sectionsSpace: 2,
                             centerSpaceRadius: 35,
                             startDegreeOffset: -180, // 240 degrees = -180 (90 degrees counter-clockwise from -90)
-                            sections: _buildMiniChartSections(costs),
+                            sections: _buildMiniChartSections(costs, recurringCosts, recurringPerKm),
                             pieTouchData: PieTouchData(
                               enabled: true,
                               touchCallback: (FlTouchEvent event, pieTouchResponse) {
@@ -831,7 +706,7 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
                 ),
                 // Tooltip overlay at top-right (aligned with label)
                 if (_touchedIndex != -1)
-                  _buildTooltipOverlay(costs),
+                  _buildTooltipOverlay(costs, recurringCosts, recurringPerKm),
               ],
             ),
           ),
@@ -840,93 +715,52 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
     );
   }
 
-  List<PieChartSectionData> _buildMiniChartSections(Map<String, double> costs) {
+  List<PieChartSectionData> _buildMiniChartSections(Map<String, double> costs, List<dynamic> recurringCosts, Map<String, double> recurringPerKm) {
+    const fixedPalette = [
+      Color(0xFF8B5CF6), Color(0xFF3B82F6), Color(0xFF10B981),
+      Color(0xFF06B6D4), Color(0xFFEC4899), Color(0xFF6366F1),
+    ];
     final sections = <PieChartSectionData>[];
     int currentIndex = 0;
-    
-    if (costs['fuel']! > 0) {
+
+    void add(Color color, double value) {
+      if (value <= 0) return;
       final isTouched = currentIndex == _touchedIndex;
       sections.add(PieChartSectionData(
-        color: const Color(0xFFEF4444),
-        value: costs['fuel']!,
-        title: '',
-        radius: isTouched ? 17 : 15,
-        showTitle: false,
+        color: color, value: value, title: '',
+        radius: isTouched ? 17 : 15, showTitle: false,
       ));
       currentIndex++;
     }
-    if (costs['insurance']! > 0) {
-      final isTouched = currentIndex == _touchedIndex;
-      sections.add(PieChartSectionData(
-        color: const Color(0xFF3B82F6),
-        value: costs['insurance']!,
-        title: '',
-        radius: isTouched ? 17 : 15,
-        showTitle: false,
-      ));
-      currentIndex++;
+
+    add(const Color(0xFFEF4444), costs['fuel'] ?? 0);
+    add(const Color(0xFFF59E0B), costs['maintenance'] ?? 0);
+    for (int r = 0; r < recurringCosts.length; r++) {
+      add(fixedPalette[r % fixedPalette.length], recurringPerKm[recurringCosts[r].name] ?? 0);
     }
-    if (costs['roadTax']! > 0) {
-      final isTouched = currentIndex == _touchedIndex;
-      sections.add(PieChartSectionData(
-        color: const Color(0xFF10B981),
-        value: costs['roadTax']!,
-        title: '',
-        radius: isTouched ? 17 : 15,
-        showTitle: false,
-      ));
-      currentIndex++;
-    }
-    if (costs['maintenance']! > 0) {
-      final isTouched = currentIndex == _touchedIndex;
-      sections.add(PieChartSectionData(
-        color: const Color(0xFFF59E0B),
-        value: costs['maintenance']!,
-        title: '',
-        radius: isTouched ? 17 : 15,
-        showTitle: false,
-      ));
-      currentIndex++;
-    }
-    if (costs['subscriptions']! > 0) {
-      final isTouched = currentIndex == _touchedIndex;
-      sections.add(PieChartSectionData(
-        color: const Color(0xFF8B5CF6),
-        value: costs['subscriptions']!,
-        title: '',
-        radius: isTouched ? 17 : 15,
-        showTitle: false,
-      ));
-      currentIndex++;
-    }
-    
+
     return sections;
   }
 
-  List<Map<String, dynamic>> _getMiniChartLabels(Map<String, double> costs) {
+  List<Map<String, dynamic>> _getMiniChartLabels(Map<String, double> costs, List<dynamic> recurringCosts, Map<String, double> recurringPerKm) {
+    const fixedPalette = [
+      Color(0xFF8B5CF6), Color(0xFF3B82F6), Color(0xFF10B981),
+      Color(0xFF06B6D4), Color(0xFFEC4899), Color(0xFF6366F1),
+    ];
     final labels = <Map<String, dynamic>>[];
-    
-    if (costs['fuel']! > 0) {
-      labels.add({'name': 'Brandstof', 'value': costs['fuel']!, 'color': const Color(0xFFEF4444)});
+
+    if ((costs['fuel'] ?? 0) > 0)        labels.add({'name': 'Brandstof', 'value': costs['fuel']!,        'color': const Color(0xFFEF4444)});
+    if ((costs['maintenance'] ?? 0) > 0) labels.add({'name': 'Onderhoud', 'value': costs['maintenance']!, 'color': const Color(0xFFF59E0B)});
+    for (int r = 0; r < recurringCosts.length; r++) {
+      final val = recurringPerKm[recurringCosts[r].name] ?? 0;
+      if (val > 0) labels.add({'name': recurringCosts[r].name, 'value': val, 'color': fixedPalette[r % fixedPalette.length]});
     }
-    if (costs['insurance']! > 0) {
-      labels.add({'name': 'Verzekering', 'value': costs['insurance']!, 'color': const Color(0xFF3B82F6)});
-    }
-    if (costs['roadTax']! > 0) {
-      labels.add({'name': 'Wegenbelasting', 'value': costs['roadTax']!, 'color': const Color(0xFF10B981)});
-    }
-    if (costs['maintenance']! > 0) {
-      labels.add({'name': 'Onderhoud', 'value': costs['maintenance']!, 'color': const Color(0xFFF59E0B)});
-    }
-    if (costs['subscriptions']! > 0) {
-      labels.add({'name': 'Abonnementen', 'value': costs['subscriptions']!, 'color': const Color(0xFF8B5CF6)});
-    }
-    
+
     return labels;
   }
 
-  Widget _buildTooltipOverlay(Map<String, double> costs) {
-    final labels = _getMiniChartLabels(costs);
+  Widget _buildTooltipOverlay(Map<String, double> costs, List<dynamic> recurringCosts, Map<String, double> recurringPerKm) {
+    final labels = _getMiniChartLabels(costs, recurringCosts, recurringPerKm);
     if (_touchedIndex < 0 || _touchedIndex >= labels.length) {
       return const SizedBox.shrink();
     }
@@ -1093,4 +927,11 @@ class _CostPerKmCardState extends State<CostPerKmCard> {
       ),
     );
   }
+}
+
+class _BarItem {
+  final String name;
+  final double value;
+  final Color color;
+  const _BarItem(this.name, this.value, this.color);
 }

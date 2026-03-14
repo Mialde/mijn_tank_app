@@ -227,11 +227,40 @@ class DataManagementSection extends StatelessWidget {
                   json['cars'] = migratedCars.map((c) => c.toMap()).toList();
                 }
 
-                print('Starting database import...');
-                provider.importJsonBackup(jsonEncode(json));
-                print('✓ Import complete!');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Bezig met importeren...'),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
+                await provider.importJsonBackup(jsonEncode(json));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Import geslaagd!'),
+                      backgroundColor: Colors.green.shade700,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  );
+                }
               } catch (e) {
-                print('❌ Import error: $e');
+                final msg = e.toString().replaceAll('Exception: ', '');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Import mislukt: $msg'),
+                      backgroundColor: Colors.red.shade700,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      duration: const Duration(seconds: 4),
+                    ),
+                  );
+                }
               }
             },
           ),

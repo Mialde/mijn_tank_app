@@ -26,9 +26,20 @@ class DataProvider with ChangeNotifier {
   bool _isLoading = false;
   String _currentQuote = "";
   DateTime? _apkDismissedAt;
+  final Map<String, DateTime> _dismissedMaintenanceWarnings = {};
+
+  // Cache voor zware berekeningen
+  List<StatItem>? _cachedStats;
+  double? _cachedTotal;
+  TimePeriod? _cachedPeriod;
+  int? _cachedCarId;
+  int? _cachedEntriesCount;
+  int? _cachedMaintenanceCount;
+  String? _cachedFuelType;
 
   TimePeriod _selectedPeriod = TimePeriod.oneMonth;
   int _selectedIndex = -1;
+  String? _selectedFuelType; // null = alle brandstoftypes
   
   // Card visibility state
   List<DashboardCardConfig> _visibleCards = DashboardCards.allCards;
@@ -46,12 +57,61 @@ class DataProvider with ChangeNotifier {
   List<RecurringCost> get recurringCosts => _recurringCosts;
   List<DeveloperNote> get notes => _notes;
   Car? get selectedCar => _selectedCar;
+
+  // ─── Doelstellingen getters ───────────────────────────────────────────────
+  double? get goalMaxFuelPrice => _selectedCar?.goalMaxFuelPrice;
+  double? get goalEfficiency   => _selectedCar?.goalEfficiency;
+  int?    get goalMonthlyKm    => _selectedCar?.goalMonthlyKm;
+
+  /// Geeft true als de meegegeven prijs per liter boven het doel ligt
+  bool isFuelPriceAboveGoal(double pricePerLiter) {
+    final goal = goalMaxFuelPrice;
+    return goal != null && pricePerLiter > goal;
+  }
+
+  /// Gereden km in de huidige kalendermaand
+  double get kmThisMonth {
+    if (_entries.isEmpty) return 0;
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+    final monthEntries = _entries
+        .where((e) => !e.date.isBefore(start))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    if (monthEntries.length < 2) return 0;
+    return (monthEntries.last.odometer - monthEntries.first.odometer).abs();
+  }
+
+  /// Voortgang km-doel deze maand (0.0 – 1.0+)
+  double get monthlyKmProgress {
+    final goal = goalMonthlyKm;
+    if (goal == null || goal <= 0) return 0;
+    return (kmThisMonth / goal).clamp(0.0, 1.5);
+  }
   UserSettings? get settings => _settings;
   bool get isLoading => _isLoading;
   String get currentQuote => _currentQuote;
   Color get themeColor => colorOptions[_settings?.accentColor] ?? const Color(0xFF00D09E);
   TimePeriod get selectedPeriod => _selectedPeriod;
   int get selectedIndex => _selectedIndex;
+  String? get selectedFuelType => _selectedFuelType;
+
+  /// Unieke brandstoftypes in de entries van de geselecteerde auto
+  List<String> get availableFuelTypes {
+    final types = _entries
+        .map((e) => e.fuelType)
+        .where((t) => t.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    return types;
+  }
+
+  /// Gefilterde entries op basis van geselecteerd brandstoftype
+  List get filteredEntries =>
+      _selectedFuelType == null
+          ? _entries
+          : _entries.where((e) => e.fuelType == _selectedFuelType).toList();
   List<DashboardCardConfig> get visibleCards => _visibleCards;
   
   Future<void> updateCardVisibility(List<DashboardCardConfig> cards) async {
@@ -107,9 +167,10 @@ class DataProvider with ChangeNotifier {
 
   void _setLoading(bool value) { _isLoading = value; notifyListeners(); }
 
-  Future<void> fetchEntries() async { if (_selectedCar != null) _entries = await DatabaseHelper.instance.getEntriesByCar(_selectedCar!.id!); notifyListeners(); }
-  Future<void> fetchMaintenance() async { if (_selectedCar != null) _maintenanceEntries = await DatabaseHelper.instance.getMaintenanceByCar(_selectedCar!.id!); notifyListeners(); }
-  Future<void> fetchRecurringCosts() async { if (_selectedCar != null) _recurringCosts = await DatabaseHelper.instance.getActiveRecurringCostsByCar(_selectedCar!.id!); notifyListeners(); }
+  Future<void> fetchEntries() async { if (_selectedCar != null) { _entries = await DatabaseHelper.instance.getEntriesByCar(_selectedCar!.id!); _invalidateCache(); } notifyListeners(); }
+  Future<void> fetchMaintenance() async { if (_selectedCar != null) { _maintenanceEntries = await DatabaseHelper.instance.getMaintenanceByCar(_selectedCar!.id!); _invalidateCache(); } notifyListeners(); }
+  Future<void> fetchRecurringCosts() async { if (_selectedCar != null) { _recurringCosts = await DatabaseHelper.instance.getActiveRecurringCostsByCar(_selectedCar!.id!); _invalidateCache(); } notifyListeners(); }
+  Future<void> fetchRecurringCostsForCar(int carId) async { _recurringCosts = await DatabaseHelper.instance.getActiveRecurringCostsByCar(carId); _invalidateCache(); notifyListeners(); }
 
   List<FuelEntry> getEntriesForCar(int carId) => _entries.where((e) => e.carId == carId).toList();
 
@@ -126,6 +187,110 @@ class DataProvider with ChangeNotifier {
       return {'show': isTimedOut, 'color': Colors.orange, 'text': 'Let op: de APK verloopt op $dateStr', 'urgent': false, 'dismissible': true};
     }
     return {'show': false};
+  }
+
+  /// Uitsplitsing van vaste kosten voor detail-weergave in grafiek
+  List<Map<String, dynamic>> getFixedCostsBreakdown() {
+    if (_selectedCar == null) return [];
+    final months = _calculateRealMonths(_entries);
+    return _recurringCosts.map((cost) => {
+      'name': cost.name,
+      'monthly': cost.monthlyCost,
+      'total': cost.monthlyCost * months,
+      'freq': cost.frequency,
+    }).toList();
+  }
+
+  void dismissMaintenanceWarning(String key) {
+    _dismissedMaintenanceWarnings[key] = DateTime.now();
+    notifyListeners();
+  }
+
+  /// Geeft lijst van actieve onderhoud-herinneringen terug
+  /// Respecteert globale settings (aan/uit) en per-auto intervallen
+  List<Map<String, dynamic>> get maintenanceWarnings {
+    if (_selectedCar == null || _maintenanceEntries.isEmpty || _entries.isEmpty) return [];
+    final now = DateTime.now();
+    final warnings = <Map<String, dynamic>>[];
+
+    // Huidige kilometerstand = laatste tankbeurt odometer
+    final sortedEntries = List.from(_entries)..sort((a, b) => a.date.compareTo(b.date));
+    final currentKm = (sortedEntries.last as dynamic).odometer as double;
+
+    for (final type in kDefaultIntervals.keys) {
+      // Globale check: is dit type ingeschakeld in instellingen?
+      if (_settings != null && !_settings!.isMaintenanceEnabled(type)) continue;
+
+      // Interval: per-auto overschrijving of standaard
+      final interval = _selectedCar!.intervalFor(type);
+      if (!interval.enabled) continue;
+
+      final kmInterval = interval.kmInterval;
+      final dayInterval = interval.dayInterval;
+      if (dayInterval == null && kmInterval == null) continue;
+
+      // Zoek de meest recente onderhoud van dit type
+      final relevant = _maintenanceEntries
+          .where((m) => m.type.toLowerCase().contains(type.toLowerCase()))
+          .toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+
+      if (relevant.isEmpty) continue;
+      final last = relevant.first;
+      final daysSince = now.difference(last.date).inDays;
+      final kmSince = currentKm - last.odometer;
+
+      bool shouldWarn = false;
+      bool urgent = false;
+      String reason = '';
+
+      if (dayInterval != null) {
+        final daysLeft = dayInterval - daysSince;
+        if (daysLeft <= 30 && daysLeft >= 0) {
+          shouldWarn = true;
+          urgent = daysLeft <= 14;
+          reason = 'over $daysLeft dagen';
+        } else if (daysLeft < 0) {
+          shouldWarn = true;
+          urgent = true;
+          reason = '${-daysLeft} dagen verlopen';
+        }
+      }
+
+      if (kmInterval != null) {
+        final kmLeft = kmInterval - kmSince;
+        if (kmLeft <= 1500 && kmLeft >= 0) {
+          shouldWarn = true;
+          urgent = urgent || kmLeft <= 500;
+          final kmStr = 'nog ${kmLeft.toStringAsFixed(0)} km';
+          reason = reason.isEmpty ? kmStr : '$reason / $kmStr';
+        } else if (kmLeft < 0) {
+          shouldWarn = true;
+          urgent = true;
+          final kmStr = '${(-kmLeft).toStringAsFixed(0)} km over';
+          reason = reason.isEmpty ? kmStr : '$reason / $kmStr';
+        }
+      }
+
+      if (!shouldWarn) continue;
+
+      final key = 'maintenance_$type';
+      if (!urgent) {
+        final dismissedAt = _dismissedMaintenanceWarnings[key];
+        if (dismissedAt != null && now.difference(dismissedAt).inHours < 24) continue;
+      }
+
+      warnings.add({
+        'key': key,
+        'type': type,
+        'text': '$type: $reason',
+        'color': urgent ? Colors.red : Colors.orange,
+        'urgent': urgent,
+        'dismissible': !urgent,
+      });
+    }
+
+    return warnings;
   }
 
   // --- DATA OPERATIONS ---
@@ -175,9 +340,20 @@ class DataProvider with ChangeNotifier {
   Future<void> toggleNote(DeveloperNote note) async { await DatabaseHelper.instance.updateNote(note.copyWith(isCompleted: !note.isCompleted)); _notes = await DatabaseHelper.instance.getAllNotes(); notifyListeners(); }
   Future<void> deleteNote(int id) async { await DatabaseHelper.instance.deleteNote(id); _notes = await DatabaseHelper.instance.getAllNotes(); notifyListeners(); }
 
-  void selectCar(Car car) { _selectedCar = car; _apkDismissedAt = null; fetchEntries(); fetchMaintenance(); }
-  void setTimePeriod(TimePeriod p) { _selectedPeriod = p; _selectedIndex = -1; notifyListeners(); }
+  void selectCar(Car car) { _selectedCar = car; _apkDismissedAt = null; _invalidateCache(); fetchEntries(); fetchMaintenance(); fetchRecurringCosts(); }
+  void setTimePeriod(TimePeriod p) { _selectedPeriod = p; _selectedIndex = -1; _invalidateCache(); notifyListeners(); }
+  void setFuelTypeFilter(String? type) { _selectedFuelType = type; _selectedIndex = -1; _invalidateCache(); notifyListeners(); }
   void setSelectedIndex(int i) { _selectedIndex = i; notifyListeners(); }
+
+  void _invalidateCache() {
+    _cachedStats = null;
+    _cachedTotal = null;
+    _cachedPeriod = null;
+    _cachedCarId = null;
+    _cachedEntriesCount = null;
+    _cachedMaintenanceCount = null;
+    _cachedFuelType = null;
+  }
 
   // --- BEREKENINGEN ---
   DateTime _getStartDate() {
@@ -186,14 +362,24 @@ class DataProvider with ChangeNotifier {
       case TimePeriod.oneMonth: 
         return DateTime(now.year, now.month, 1);
       case TimePeriod.sixMonths: 
-        // Fix: Gebruik Duration om crashes te voorkomen bij negatieve maanden
         return DateTime(now.year, now.month, now.day).subtract(const Duration(days: 180));
       case TimePeriod.oneYear: 
-        // Fix: Gebruik Duration om crashes te voorkomen
         return DateTime(now.year, now.month, now.day).subtract(const Duration(days: 365));
       case TimePeriod.allTime: 
         return DateTime(2000); 
     }
+  }
+
+  /// Stats voor een specifieke periode zonder de huidige periode te wijzigen
+  List<StatItem> getStatsForSpecificPeriod(TimePeriod period) {
+    if (period == _selectedPeriod) return getStatsForPeriod();
+    final saved = _selectedPeriod;
+    _selectedPeriod = period;
+    _cachedStats = null;
+    final result = getStatsForPeriod();
+    _selectedPeriod = saved;
+    _cachedStats = null;
+    return result;
   }
 
   int _calculateRealMonths(List<FuelEntry> allEntriesForCar) {
@@ -208,8 +394,21 @@ class DataProvider with ChangeNotifier {
 
   List<StatItem> getStatsForPeriod() {
     if (_selectedCar == null) return [];
+
+    // Cache check — returneer direct als data niet veranderd is
+    if (_cachedStats != null &&
+        _cachedPeriod == _selectedPeriod &&
+        _cachedCarId == _selectedCar!.id &&
+        _cachedEntriesCount == _entries.length &&
+        _cachedMaintenanceCount == _maintenanceEntries.length &&
+        _cachedFuelType == _selectedFuelType) {
+      return _cachedStats!;
+    }
     final startDate = _getStartDate();
-    final filteredEntries = _entries.where((e) => e.date.isAfter(startDate) || e.date.isAtSameMomentAs(startDate)).toList();
+    final sourceEntries = _selectedFuelType == null
+        ? _entries
+        : _entries.where((e) => e.fuelType == _selectedFuelType).toList();
+    final filteredEntries = sourceEntries.where((e) => e.date.isAfter(startDate) || e.date.isAtSameMomentAs(startDate)).toList();
     final filteredMaintenance = _maintenanceEntries.where((m) => m.date.isAfter(startDate) || m.date.isAtSameMomentAs(startDate)).toList();
 
     List<StatItem> items = [];
@@ -259,26 +458,21 @@ class DataProvider with ChangeNotifier {
       ));
     }
 
-    // C. Vaste Lasten (SORTORDER = 2)
+    // C. Alle kosten: recurring costs (verzekering, wegenbelasting, abonnementen, etc.)
     int monthsCount = _calculateRealMonths(_entries);
-    double monthlyRoadTax = (_selectedCar!.roadTaxFreq == 'Kwartaal' ? _selectedCar!.roadTax / 3 : _selectedCar!.roadTax);
-    
-    double totalInsurance = (_selectedCar!.insurance) * monthsCount;
-    double totalRoadTax = (monthlyRoadTax) * monthsCount;
+    double totalFixedCosts = 0.0;
 
-    if (totalInsurance > 0) items.add(StatItem(title: 'Verzekering', value: totalInsurance, color: Colors.grey, percentage: 0, sortOrder: 2));
-    if (totalRoadTax > 0) items.add(StatItem(title: 'Wegenbelasting', value: totalRoadTax, color: Colors.grey, percentage: 0, sortOrder: 2));
-
-    // D. Abonnementen / Recurring costs (SORTORDER = 2)
-    double totalSubscriptions = 0.0;
-    if (_recurringCosts.isNotEmpty) {
-      totalSubscriptions = _recurringCosts.fold(0.0, (sum, s) => sum + s.monthlyCost) * monthsCount;
-      if (totalSubscriptions > 0) {
-        items.add(StatItem(title: 'Abonnementen', value: totalSubscriptions, color: Colors.grey, percentage: 0, sortOrder: 2));
+    // _recurringCosts bevat actieve kosten (al geladen via fetchRecurringCosts)
+    // Recurring costs — de enige bron van vaste kosten
+    for (final cost in _recurringCosts) {
+      final total = cost.monthlyCost * monthsCount;
+      if (total > 0) {
+        totalFixedCosts += total;
+        items.add(StatItem(title: cost.name, value: total, color: Colors.grey, percentage: 0, sortOrder: 2));
       }
     }
 
-    double grandTotal = totalFuelCost + totalMaint + totalInsurance + totalRoadTax + totalSubscriptions;
+    double grandTotal = totalFuelCost + totalMaint + totalFixedCosts;
     if (grandTotal == 0) return [];
 
     // --- NIEUWE SORTERING ---
@@ -332,10 +526,30 @@ class DataProvider with ChangeNotifier {
       }
     }
 
+    // Sla resultaat op in cache
+    _cachedStats = items;
+    _cachedTotal = items.fold<double>(0.0, (sum, item) => sum + item.value);
+    _cachedPeriod = _selectedPeriod;
+    _cachedCarId = _selectedCar!.id;
+    _cachedEntriesCount = _entries.length;
+    _cachedMaintenanceCount = _maintenanceEntries.length;
+    _cachedFuelType = _selectedFuelType;
+
     return items;
   }
 
-  double getTotalForPeriod() => getStatsForPeriod().fold(0, (sum, item) => sum + item.value);
+  double getTotalForPeriod() {
+    // Gebruik gecachte total als beschikbaar, anders bereken via getStatsForPeriod
+    if (_cachedTotal != null &&
+        _cachedPeriod == _selectedPeriod &&
+        _cachedCarId == _selectedCar?.id &&
+        _cachedEntriesCount == _entries.length &&
+        _cachedMaintenanceCount == _maintenanceEntries.length &&
+        _cachedFuelType == _selectedFuelType) {
+      return _cachedTotal!;
+    }
+    return getStatsForPeriod().fold(0, (sum, item) => sum + item.value);
+  }
 
   Future<void> importJsonBackup(String jsonContent) async {
     final data = jsonDecode(jsonContent);

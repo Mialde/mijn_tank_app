@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../data_provider.dart';
 import '../models/fuel_entry.dart';
-import '../widgets/apk_warning_banner.dart';
+import '../widgets/warnings_banner.dart';
 import 'maintenance_screen.dart';
 
 class InputScreen extends StatefulWidget {
@@ -201,7 +201,7 @@ class _InputScreenState extends State<InputScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const ApkWarningBanner(),
+                  const WarningsBanner(),
                   
                   if (hasHeader)
                     Padding(
@@ -370,45 +370,131 @@ class _InputScreenState extends State<InputScreen> {
   void _saveEntry(DataProvider provider) {
     if (provider.selectedCar == null) return;
     
-    // Validation
     final odometer = double.tryParse(_odoController.text.replaceAll(',', '.')) ?? 0;
     final liters = double.tryParse(_literController.text.replaceAll(',', '.')) ?? 0;
     final priceTotal = double.tryParse(_priceController.text.replaceAll(',', '.')) ?? 0;
     
     if (odometer <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Voer een geldige kilometerstand in'))
-      );
+      _showError('Voer een geldige kilometerstand in');
       return;
+    }
+
+    // Controleer of kilometerstand lager is dan vorige tankbeurt
+    if (provider.entries.isNotEmpty) {
+      final sorted = provider.entries.toList()..sort((a, b) => a.date.compareTo(b.date));
+      final lastOdometer = sorted.last.odometer;
+      if (odometer < lastOdometer) {
+        _showOdometerWarning(provider, odometer, liters, priceTotal, lastOdometer);
+        return;
+      }
+      if (odometer == lastOdometer) {
+        _showError('Kilometerstand is gelijk aan de vorige tankbeurt (${lastOdometer.toStringAsFixed(0)} km)');
+        return;
+      }
     }
     
     if (liters <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Voer een geldig aantal liters in'))
-      );
+      _showError('Voer een geldig aantal liters in');
       return;
     }
     
     if (priceTotal <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Voer een geldig bedrag in'))
-      );
+      _showError('Voer een geldig bedrag in');
       return;
     }
-    
+
+    _doSave(provider, odometer, liters, priceTotal);
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _showOdometerWarning(DataProvider provider, double odometer,
+      double liters, double priceTotal, double lastOdometer) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Kilometerstand lager'),
+          ],
+        ),
+        content: Text(
+          'De ingevoerde kilometerstand (${odometer.toStringAsFixed(0)} km) is lager dan de vorige tankbeurt '
+          '(${lastOdometer.toStringAsFixed(0)} km).\n\nWeet je zeker dat dit klopt?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuleren'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _doSave(provider, odometer, liters, priceTotal);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Toch opslaan', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _doSave(DataProvider provider, double odometer, double liters, double priceTotal) {
+    final pricePerLiter = liters > 0 ? priceTotal / liters : 0.0;
     final entry = FuelEntry(
       carId: provider.selectedCar!.id!,
       date: _selectedDate,
       odometer: odometer,
       liters: liters,
       priceTotal: priceTotal,
-      pricePerLiter: 0,
+      pricePerLiter: pricePerLiter,
     );
     provider.addFuelEntry(entry);
     _odoController.clear();
     _literController.clear();
     _priceController.clear();
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tankbeurt opgeslagen!')));
+
+    // Brandstofprijs doel check
+    if (pricePerLiter > 0 && provider.isFuelPriceAboveGoal(pricePerLiter)) {
+      final goal = provider.goalMaxFuelPrice!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              'Prijs €${pricePerLiter.toStringAsFixed(3)}/L ligt boven je doel van €${goal.toStringAsFixed(3)}/L',
+              style: const TextStyle(fontSize: 12),
+            )),
+          ]),
+          backgroundColor: Colors.orange.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Tankbeurt opgeslagen!'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   void _showMaintenanceModal(BuildContext context) {

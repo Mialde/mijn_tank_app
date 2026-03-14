@@ -22,45 +22,54 @@ class DatabaseHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
-
     return await openDatabase(
       path,
-      version: 4, // Versie verhoogd voor recurring_costs tabel
+      version: 6,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
+      onOpen: _onOpen,
     );
+  }
+
+  /// Zorgt dat alle kolommen bestaan, ongeacht versie-tracking problemen
+  Future _onOpen(Database db) async {
+    List<String> cols = [];
+    try {
+      final info = await db.rawQuery('PRAGMA table_info(cars)');
+      cols = info.map((r) => r['name'] as String).toList();
+    } catch (_) {}
+
+    Future<void> addCol(String col, String type) async {
+      if (!cols.contains(col)) {
+        try { await db.execute('ALTER TABLE cars ADD COLUMN $col $type'); } catch (_) {}
+      }
+    }
+
+    await addCol('fuel_type', 'TEXT');
+    await addCol('owner', 'TEXT');
+    await addCol('maintenance_intervals', 'TEXT');
+    await addCol('goal_max_fuel_price', 'REAL');
+    await addCol('goal_efficiency', 'REAL');
+    await addCol('goal_monthly_km', 'INTEGER');
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     print('Database upgrade: v$oldVersion -> v$newVersion');
-    
-    if (oldVersion < 2) {
-      print('Adding maintenance table...');
-      await _createMaintenanceTable(db);
-    }
-    
+    if (oldVersion < 2) { await _createMaintenanceTable(db); }
     if (oldVersion < 3) {
-      print('Adding fuel_type and owner columns to cars table...');
-      try {
-        await db.execute('ALTER TABLE cars ADD COLUMN fuel_type TEXT');
-        print('✓ fuel_type column added');
-      } catch (e) {
-        print('fuel_type column already exists or error: $e');
-      }
-      
-      try {
-        await db.execute('ALTER TABLE cars ADD COLUMN owner TEXT');
-        print('✓ owner column added');
-      } catch (e) {
-        print('owner column already exists or error: $e');
-      }
+      try { await db.execute('ALTER TABLE cars ADD COLUMN fuel_type TEXT'); } catch (_) {}
+      try { await db.execute('ALTER TABLE cars ADD COLUMN owner TEXT'); } catch (_) {}
     }
-    
-    if (oldVersion < 4) {
-      print('Adding recurring_costs table...');
-      await _createRecurringCostsTable(db);
+    if (oldVersion < 4) { await _createRecurringCostsTable(db); }
+    if (oldVersion < 5) {
+      try { await db.execute('ALTER TABLE cars ADD COLUMN maintenance_intervals TEXT'); } catch (_) {}
+      try { await db.execute('ALTER TABLE user_settings ADD COLUMN maintenance_notifications TEXT'); } catch (_) {}
     }
-    
+    if (oldVersion < 6) {
+      try { await db.execute('ALTER TABLE cars ADD COLUMN goal_max_fuel_price REAL'); } catch (_) {}
+      try { await db.execute('ALTER TABLE cars ADD COLUMN goal_efficiency REAL'); } catch (_) {}
+      try { await db.execute('ALTER TABLE cars ADD COLUMN goal_monthly_km INTEGER'); } catch (_) {}
+    }
     print('Database upgrade complete!');
   }
 
@@ -69,8 +78,7 @@ class DatabaseHelper {
     const textType = 'TEXT';
     const numType = 'REAL';
     const intType = 'INTEGER';
-
-    await db.execute('CREATE TABLE IF NOT EXISTS cars (id $idType, name $textType, license_plate $textType, type $textType, apk_date $textType, insurance $numType, road_tax $numType, road_tax_freq $textType, fuel_type $textType, owner $textType)');
+    await db.execute('CREATE TABLE IF NOT EXISTS cars (id $idType, name $textType, license_plate $textType, type $textType, apk_date $textType, insurance $numType, road_tax $numType, road_tax_freq $textType, fuel_type $textType, owner $textType, maintenance_intervals $textType, goal_max_fuel_price $numType, goal_efficiency $numType, goal_monthly_km $intType)');
     await db.execute('CREATE TABLE IF NOT EXISTS entries (id $idType, car_id $intType, date $textType, odometer $numType, liters $numType, price_total $numType, price_per_liter $numType, fuel_type $textType, FOREIGN KEY (car_id) REFERENCES cars (id) ON DELETE CASCADE)');
     await db.execute('CREATE TABLE IF NOT EXISTS user_settings (id $idType, first_name $textType, theme_mode $textType, accent_color $textType, use_greeting $intType, show_quotes $intType)');
     await db.execute('CREATE TABLE IF NOT EXISTS developer_notes (id $idType, content $textType, date $textType, is_completed $intType)');
@@ -119,23 +127,12 @@ class DatabaseHelper {
     final db = await database; 
     final result = await db.query('cars');
     print('getAllCars: Found ${result.length} cars in database');
-    
-    if (result.isEmpty) {
-      print('⚠ Database is leeg - geen auto\'s gevonden!');
-      return [];
-    }
-    
+    if (result.isEmpty) { print('⚠ Database is leeg - geen auto\'s gevonden!'); return []; }
     try {
-      final cars = result.map((json) {
-        print('  - Loading car: ${json['name']} (${json['license_plate']})');
-        return Car.fromMap(json);
-      }).toList();
+      final cars = result.map((json) { print('  - Loading car: ${json['name']} (${json['license_plate']})'); return Car.fromMap(json); }).toList();
       print('✓ Successfully loaded ${cars.length} cars');
       return cars;
-    } catch (e) {
-      print('❌ Error loading cars: $e');
-      rethrow;
-    }
+    } catch (e) { print('❌ Error loading cars: $e'); rethrow; }
   }
   
   Future<int> updateCar(Car car) async { final db = await database; return await db.update('cars', car.toMap(), where: 'id = ?', whereArgs: [car.id]); }
@@ -155,32 +152,11 @@ class DatabaseHelper {
   Future<int> deleteMaintenance(int id) async { final db = await database; return await db.delete('maintenance', where: 'id = ?', whereArgs: [id]); }
 
   // --- RECURRING COSTS ---
-  Future<int> insertRecurringCost(RecurringCost cost) async { 
-    final db = await database; 
-    return await db.insert('recurring_costs', cost.toMap()); 
-  }
-  
-  Future<List<RecurringCost>> getRecurringCostsByCar(int carId) async { 
-    final db = await database; 
-    final result = await db.query('recurring_costs', where: 'car_id = ?', whereArgs: [carId], orderBy: 'name ASC'); 
-    return result.map((json) => RecurringCost.fromMap(json)).toList(); 
-  }
-  
-  Future<List<RecurringCost>> getActiveRecurringCostsByCar(int carId) async { 
-    final db = await database; 
-    final result = await db.query('recurring_costs', where: 'car_id = ? AND is_active = 1', whereArgs: [carId], orderBy: 'name ASC'); 
-    return result.map((json) => RecurringCost.fromMap(json)).toList(); 
-  }
-  
-  Future<int> updateRecurringCost(RecurringCost cost) async { 
-    final db = await database; 
-    return await db.update('recurring_costs', cost.toMap(), where: 'id = ?', whereArgs: [cost.id]); 
-  }
-  
-  Future<int> deleteRecurringCost(int id) async { 
-    final db = await database; 
-    return await db.delete('recurring_costs', where: 'id = ?', whereArgs: [id]); 
-  }
+  Future<int> insertRecurringCost(RecurringCost cost) async { final db = await database; return await db.insert('recurring_costs', cost.toMap()); }
+  Future<List<RecurringCost>> getRecurringCostsByCar(int carId) async { final db = await database; final result = await db.query('recurring_costs', where: 'car_id = ?', whereArgs: [carId], orderBy: 'name ASC'); return result.map((json) => RecurringCost.fromMap(json)).toList(); }
+  Future<List<RecurringCost>> getActiveRecurringCostsByCar(int carId) async { final db = await database; final result = await db.query('recurring_costs', where: 'car_id = ? AND is_active = 1', whereArgs: [carId], orderBy: 'name ASC'); return result.map((json) => RecurringCost.fromMap(json)).toList(); }
+  Future<int> updateRecurringCost(RecurringCost cost) async { final db = await database; return await db.update('recurring_costs', cost.toMap(), where: 'id = ?', whereArgs: [cost.id]); }
+  Future<int> deleteRecurringCost(int id) async { final db = await database; return await db.delete('recurring_costs', where: 'id = ?', whereArgs: [id]); }
 
   // --- NOTES ---
   Future<int> insertNote(DeveloperNote note) async { final db = await database; return await db.insert('developer_notes', note.toMap()); }
@@ -190,12 +166,7 @@ class DatabaseHelper {
 
   // --- SETTINGS ---
   Future<UserSettings> getSettings() async { final db = await database; final maps = await db.query('user_settings', limit: 1); return maps.isNotEmpty ? UserSettings.fromMap(maps.first) : UserSettings(id: 1, firstName: 'Gebruiker', themeMode: 'System', accentColor: 'Mint', useGreeting: true, showQuotes: true); }
-  
-  // FIXED: Syntax error corrected here (removed triple dot)
-  Future<int> saveSettings(UserSettings settings) async { 
-    final db = await database; 
-    return await db.insert('user_settings', settings.toMap()..['id'] = 1, conflictAlgorithm: ConflictAlgorithm.replace); 
-  }
+  Future<int> saveSettings(UserSettings settings) async { final db = await database; return await db.insert('user_settings', settings.toMap()..['id'] = 1, conflictAlgorithm: ConflictAlgorithm.replace); }
 
   Future<void> deleteAllData() async {
     final db = await database;
